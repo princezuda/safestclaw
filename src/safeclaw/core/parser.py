@@ -1007,7 +1007,10 @@ class CommandParser:
                         if not (before_ok and after_ok):
                             continue
 
-                    score = 0.92
+                    # Prefer longer phrase matches: "style learn" should beat
+                    # a bare "code" found later in the text.
+                    specificity = len(phrase) / max(len(text), 1)
+                    score = 0.92 + 0.05 * min(specificity, 1.0)
                     if score > best_score:
                         best_score = score
                         best_intent = intent
