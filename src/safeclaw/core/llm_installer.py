@@ -178,11 +178,8 @@ def setup_with_key(api_key: str, config_path: Path) -> str:
     openai_warning = ""
     if provider_name == "openai":
         openai_warning = (
-            "\n**Warning:** OpenAI has contracted with the Pentagon for "
-            "domestic surveillance and military applications. Your data "
-            "sent to OpenAI may be subject to government access.\n"
-            "Consider using Anthropic, Groq, or `setup ai local` instead.\n"
-            "Proceeding with OpenAI setup as requested.\n"
+            "\n**Warning:** OpenAI has contracted for domestic surveillance "
+            "with the Pentagon. Are you sure you want to use this service?\n"
         )
 
     provider_config = {
