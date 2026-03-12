@@ -1062,6 +1062,14 @@ class BlogAction(BaseAction):
         user_id: str,
     ) -> str:
         """Execute the actual remote publish after confirmation."""
+        if not self.publisher or not self.publisher.targets:
+            return (
+                "Publishing target is no longer available (session may have been restored after restart).\n"
+                "Please re-issue the publish command:\n"
+                "  publish blog to wp://mysite.com user pass\n"
+                "  publish blog to sftp://host user pass"
+            )
+
         draft_path = self._get_draft_path(user_id)
         if not draft_path.exists():
             return "No blog draft found."
@@ -1150,8 +1158,9 @@ class BlogAction(BaseAction):
 
         if scheme in ("wp", "wordpress"):
             url = host_part if host_part.startswith("http") else f"https://{host_part}"
+            domain = urlparse(url).netloc or host_part.split('/')[0]
             return PublishTarget(
-                label=f"wp-{host_part.split('/')[0]}",
+                label=f"wp-{domain}",
                 target_type=PublishTargetType.WORDPRESS,
                 url=url,
                 username=token1,
@@ -1160,8 +1169,9 @@ class BlogAction(BaseAction):
 
         if scheme == "joomla":
             url = host_part if host_part.startswith("http") else f"https://{host_part}"
+            domain = urlparse(url).netloc or host_part.split('/')[0]
             return PublishTarget(
-                label=f"joomla-{host_part.split('/')[0]}",
+                label=f"joomla-{domain}",
                 target_type=PublishTargetType.JOOMLA,
                 url=url,
                 username=token1,
@@ -1170,8 +1180,9 @@ class BlogAction(BaseAction):
 
         if scheme == "api":
             url = host_part if host_part.startswith("http") else f"https://{host_part}"
+            domain = urlparse(url).netloc or host_part.split('/')[0]
             return PublishTarget(
-                label=f"api-{host_part.split('/')[0]}",
+                label=f"api-{domain}",
                 target_type=PublishTargetType.API,
                 url=url,
                 api_key=token1,
