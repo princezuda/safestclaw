@@ -54,7 +54,7 @@ class CLIChannel(BaseChannel):
                 "[dim]Next milestone:[/dim] [bold]500 stars[/bold] [yellow]:exploding_head:[/yellow]",
                 border_style="yellow",
                 title="[bold yellow] MILESTONE [/bold yellow]",
-                subtitle="[dim]safeclaw 0.4.0[/dim]",
+                subtitle="[dim]safeclaw 0.3.0[/dim]",
             )
         )
         self.console.print()
