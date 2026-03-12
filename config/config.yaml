@@ -46,6 +46,7 @@ memory:
 apis:
   openweathermap: ""  # For weather in briefings
   newsapi: ""  # For news in briefings
+  wolfram_alpha: ""  # For richer Wolfram Alpha research results (free at developer.wolframalpha.com)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-Task LLM Routing (100-Star Feature)

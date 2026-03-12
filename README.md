@@ -2,7 +2,7 @@
 
 **The zero-cost alternative to OpenClaw. No LLM. No API bills. No prompt injection. Runs on any machine.**
 
-> **100 STARS** — We hit one hundred stars on GitHub! This milestone brings: **Fuzzy Learning & Personalization.** Writing style profiling that learns how you write, a research pipeline with two-phase gather-then-analyze workflow, a coding toolbox with 7 templates and offline utilities, auto-blog scheduling with cron, and a task-aware prompt builder. All new features work offline with zero LLM cost — AI is optional for deep analysis. [See the new features below.](#-writing-style-profiler) Previous milestone: [Blogging — two modes.](#blogging-guide) Next milestone: **250 stars** 🤯
+> **250 STARS** — We hit 250 stars on GitHub! This milestone brings: **Real Research, Auto LLM Installer, and Smart Learning.** Research now searches arXiv and Semantic Scholar for real academic papers, asks Wolfram Alpha for computational answers, and still uses RSS as supplementary. `install llm` auto-sets up Ollama with one command. The parser now auto-corrects typos, converts word-numbers ("one" → 1), and learns from your mistakes automatically. [See the new features below.](#-real-research-sources) Previous milestone: [Fuzzy Learning & Personalization.](#-writing-style-profiler) Next milestone: **500 stars** 🤯
 
 While OpenClaw users are burning [$200/day](https://www.notebookcheck.net/Free-to-use-AI-tool-can-burn-through-hundreds-of-Dollars-per-day-OpenClaw-has-absurdly-high-token-use.1219925.0.html) and [$3,600/month](https://dev.to/thegdsks/i-tried-the-free-ai-agent-with-124k-github-stars-heres-my-500-reality-check-2885) on API tokens, SafeClaw delivers 90% of the functionality using traditional programming — rule-based parsing, ML pipelines, and local-first tools. **Your API bill: $0. Forever.**
 
@@ -102,6 +102,27 @@ SafeClaw uses VADER, spaCy, sumy, YOLO, Whisper, Piper, and other battle-tested 
 * **Vision** — YOLO object detection + OCR (~2GB)
 * **OCR** — Tesseract text extraction from images (lightweight)
 
+### 🔬 Real Research Sources
+* **arXiv** — Search academic papers across CS, math, physics, biology, and more (free, no API key)
+* **Semantic Scholar** — Academic papers with citation counts and author info (free, no API key)
+* **Wolfram Alpha** — Computational knowledge engine for factual answers and calculations
+* **Smart routing** — `research <topic>` searches all sources at once, or use `research arxiv`, `research scholar`, `research wolfram` individually
+* **Two-phase pipeline** — Phase 1 gathers from real research sources ($0), Phase 2 does optional LLM deep analysis
+
+### 🤖 Auto LLM Installer
+* **One command** — `install llm` detects your OS, installs Ollama, downloads a model, and configures SafeClaw
+* **Model presets** — `install llm small` (1.3GB), `install llm coding`, `install llm writing`
+* **Status check** — `llm status` shows what's installed and running
+* **Cross-platform** — Linux (curl), macOS (brew/curl), Windows (winget)
+* **Zero config** — After install, AI features just work
+
+### 🧠 Smart Input Learning
+* **Word-to-number** — Type "research select one two three" and SafeClaw understands "1 2 3"
+* **Typo auto-correction** — "remaind me" → "remind me", "summerize" → "summarize"
+* **Shorthand** — "tmrw" → "tomorrow", "hrs" → "hours", "mins" → "minutes"
+* **Auto-learns from mistakes** — If a command fails and you retype it correctly, SafeClaw remembers the mapping for next time
+* **No AI needed** — All corrections are rule-based and deterministic
+
 ### ✍️ Writing Style Profiler
 * **Learn your voice** — Feed SafeClaw your writing and it builds a 35-metric profile (sentence length, vocabulary, formality, contractions, structure, favorite words, etc.)
 * **Persistent memory** — Your profile is stored in SQLite and improves with every sample
@@ -196,6 +217,10 @@ SafeClaw uses VADER, spaCy, sumy, YOLO, Whisper, Piper, and other battle-tested 
 | Blog (AI-powered) | ✅ (optional, 11 providers) | ✅ |
 | Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 | Writing style learning | ✅ (statistical profiling) | ❌ |
+| Academic research (arXiv, Scholar) | ✅ (free, no API key) | ❌ |
+| Wolfram Alpha | ✅ (computational knowledge) | ❌ |
+| Auto LLM installer | ✅ (one command) | ❌ |
+| Auto-learning from mistakes | ✅ (word-to-number, typo correction) | ❌ |
 | Research pipeline | ✅ (two-phase, LLM optional) | ✅ (AI only) |
 | Code templates & tools | ✅ (7 templates, offline utils) | ❌ (requires AI) |
 | Auto-blog scheduling | ✅ (cron-based) | ❌ |
@@ -300,8 +325,14 @@ safeclaw --verbose
 > publish blog to my-wordpress      # Publish to WordPress
 > style learn I write concise, punchy posts.        # Teach SafeClaw your style
 > style profile                     # View your writing profile
-> research WebAssembly performance  # Gather sources (no LLM)
+> research WebAssembly performance  # Search arXiv + Scholar + Wolfram
+> research arxiv quantum computing  # Search arXiv papers directly
+> research scholar machine learning # Search Semantic Scholar
+> research wolfram integrate x^2   # Ask Wolfram Alpha
 > research select 1,2,3             # Pick sources to analyze
+> install llm                       # Auto-setup local AI (one command!)
+> install llm small                 # Install lightweight model
+> llm status                        # Check local AI status
 > code template python-class UserAuth Auth handler  # Generate boilerplate
 > code templates                    # List all 7 templates
 > code stats src/                   # Lines of code by language
@@ -367,11 +398,20 @@ safeclaw blog                      # Interactive menu (AI or manual)
 safeclaw style learn "I write short, punchy sentences. No fluff."
 safeclaw style profile             # View your writing profile
 
-# Research
-safeclaw research "WebAssembly performance"  # Gather sources
+# Research (arXiv, Semantic Scholar, Wolfram Alpha)
+safeclaw research "quantum computing"       # Search all sources
+safeclaw research arxiv "transformer models" # arXiv papers
+safeclaw research scholar "deep learning"   # Semantic Scholar
+safeclaw research wolfram "integrate x^2"   # Wolfram Alpha
 safeclaw research sources          # View gathered sources
 safeclaw research select 1,2,3     # Pick sources for deep analysis
 safeclaw research analyze          # LLM deep dive (optional)
+
+# LLM Auto-Installer
+safeclaw install llm               # One-command Ollama setup
+safeclaw install llm small         # Install lightweight model
+safeclaw install llm coding        # Install coding-optimized model
+safeclaw llm status                # Check local AI status
 
 # Coding Toolbox
 safeclaw code templates            # List available templates

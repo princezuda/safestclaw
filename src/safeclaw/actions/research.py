@@ -1,21 +1,20 @@
 """
-SafeClaw Research Action - Web search + summarization + LLM deep dive.
+SafeClaw Research Action - Real research from academic & knowledge sources.
 
 Two-phase research pipeline:
 
-Phase 1 (Non-LLM):
-- Web search via RSS/crawl (no API key needed)
-- Fetch and extract content from URLs
+Phase 1 (Non-LLM, $0):
+- arXiv (academic papers, free API)
+- Semantic Scholar (academic papers, free API)
+- Wolfram Alpha (computational knowledge)
+- RSS feeds as supplementary sources
+- Crawl specific URLs
 - Summarize with sumy (extractive, no AI)
-- Present sources to user for selection
 
 Phase 2 (LLM, optional):
 - User selects which sources to research in depth
 - LLM analyzes and synthesizes selected sources
 - Uses the research-specific LLM provider (per-task routing)
-
-This gives users $0 research for quick lookups and LLM-powered
-deep analysis only when they choose to use it.
 """
 
 import logging
@@ -26,6 +25,13 @@ from typing import TYPE_CHECKING, Any
 from safeclaw.actions.base import BaseAction
 from safeclaw.core.crawler import Crawler
 from safeclaw.core.feeds import FeedReader
+from safeclaw.core.research_sources import (
+    KnowledgeResult,
+    query_wolfram_alpha,
+    search_all,
+    search_arxiv,
+    search_semantic_scholar,
+)
 from safeclaw.core.summarizer import Summarizer
 
 if TYPE_CHECKING:
@@ -43,6 +49,9 @@ class ResearchSource:
     summary: str = ""
     keywords: list[str] = field(default_factory=list)
     selected: bool = False
+    source_type: str = ""  # "arxiv", "semantic_scholar", "wolfram", "rss", "url"
+    authors: list[str] = field(default_factory=list)
+    citation_count: int = 0
 
 
 @dataclass
@@ -53,14 +62,25 @@ class ResearchSession:
     phase: str = "gathering"  # gathering, selecting, analyzing, complete
     deep_analysis: str = ""
     selected_indices: list[int] = field(default_factory=list)
+    wolfram_result: str = ""  # Wolfram Alpha answer if available
 
 
 class ResearchAction(BaseAction):
     """
-    Two-phase research: non-LLM discovery + optional LLM deep dive.
+    Two-phase research: real academic sources + optional LLM deep dive.
+
+    Sources:
+        - arXiv (academic papers, free, no API key)
+        - Semantic Scholar (academic papers, free, no API key)
+        - Wolfram Alpha (computational knowledge)
+        - RSS feeds (supplementary)
+        - Direct URLs
 
     Commands:
-        research <topic>           - Start research on a topic
+        research <topic>           - Search academic sources for a topic
+        research arxiv <query>     - Search arXiv specifically
+        research scholar <query>   - Search Semantic Scholar specifically
+        research wolfram <query>   - Ask Wolfram Alpha
         research url <url>         - Research a specific URL
         research select <1,2,3>    - Select sources for deep analysis
         research analyze           - Run LLM deep analysis on selected sources
@@ -70,7 +90,7 @@ class ResearchAction(BaseAction):
     """
 
     name = "research"
-    description = "Web research with optional AI deep dive"
+    description = "Academic research with arXiv, Semantic Scholar, Wolfram Alpha"
 
     def __init__(self):
         self._sessions: dict[str, ResearchSession] = {}
@@ -97,17 +117,33 @@ class ResearchAction(BaseAction):
             return self._help()
 
         if "research url" in lower:
-            # Research a specific URL
             urls = re.findall(r'https?://[^\s<>"{}|\\^`\[\]]+', raw)
             if urls:
                 return await self._research_url(urls[0], user_id, engine)
             return "Please provide a URL: research url https://example.com"
 
+        if "research arxiv" in lower:
+            query = raw.split("arxiv", 1)[-1].strip()
+            if query:
+                return await self._search_arxiv(query, user_id)
+            return "Please provide a query: research arxiv quantum computing"
+
+        if "research scholar" in lower:
+            query = raw.split("scholar", 1)[-1].strip()
+            if query:
+                return await self._search_scholar(query, user_id)
+            return "Please provide a query: research scholar machine learning"
+
+        if "research wolfram" in lower:
+            query = raw.split("wolfram", 1)[-1].strip()
+            if query:
+                return await self._search_wolfram(query, user_id, engine)
+            return "Please provide a query: research wolfram integrate x^2"
+
         if "research select" in lower:
-            # Select sources for deep analysis
             numbers = re.findall(r'\d+', raw.split("select", 1)[-1])
             if numbers:
-                indices = [int(n) - 1 for n in numbers]  # Convert to 0-indexed
+                indices = [int(n) - 1 for n in numbers]
                 return self._select_sources(user_id, indices)
             return "Specify source numbers: research select 1,2,3"
 
@@ -139,18 +175,71 @@ class ResearchAction(BaseAction):
         engine: "SafeClaw",
     ) -> str:
         """
-        Phase 1: Gather sources on a topic using non-LLM methods.
+        Phase 1: Gather sources from academic databases and knowledge engines.
 
-        - Search RSS feeds for relevant articles
-        - Crawl top results
-        - Summarize each with sumy
+        Searches arXiv, Semantic Scholar, Wolfram Alpha, and RSS feeds concurrently.
         """
         session = ResearchSession(topic=topic)
         self._sessions[user_id] = session
 
-        lines = [f"**Researching: {topic}**", "", "Gathering sources (no LLM)...", ""]
+        lines = [f"**Researching: {topic}**", "", "Searching academic sources (no LLM)...", ""]
 
-        # 1. Search RSS feeds for the topic
+        # Get Wolfram Alpha app_id from config if available
+        wolfram_app_id = engine.config.get("apis", {}).get("wolfram_alpha", "")
+
+        # Search all academic sources concurrently
+        results = await search_all(
+            query=topic,
+            max_results=8,
+            wolfram_app_id=wolfram_app_id,
+        )
+
+        # Process arXiv results
+        for paper in results["arxiv"]:
+            summary = paper.abstract[:500]
+            if len(paper.abstract) > 100:
+                summary = self._summarizer.summarize(paper.abstract, sentences=3)
+
+            keywords = self._summarizer.get_keywords(paper.abstract, top_n=5)
+
+            session.sources.append(ResearchSource(
+                title=paper.title,
+                url=paper.url,
+                content=paper.abstract,
+                summary=summary,
+                keywords=keywords,
+                source_type="arxiv",
+                authors=paper.authors,
+            ))
+
+        # Process Semantic Scholar results
+        for paper in results["semantic_scholar"]:
+            abstract = paper.abstract or ""
+            summary = abstract[:500]
+            if len(abstract) > 100:
+                summary = self._summarizer.summarize(abstract, sentences=3)
+
+            keywords = self._summarizer.get_keywords(abstract, top_n=5) if abstract else []
+
+            session.sources.append(ResearchSource(
+                title=paper.title,
+                url=paper.url,
+                content=abstract,
+                summary=summary,
+                keywords=keywords,
+                source_type="semantic_scholar",
+                authors=paper.authors,
+                citation_count=paper.citation_count,
+            ))
+
+        # Process Wolfram Alpha result
+        wolfram = results.get("wolfram")
+        if wolfram and isinstance(wolfram, KnowledgeResult):
+            session.wolfram_result = wolfram.result
+            lines.append(f"**Wolfram Alpha:** {wolfram.result}")
+            lines.append("")
+
+        # Supplementary: also check RSS feeds for broader coverage
         try:
             all_items = await self._feed_reader.fetch_all_enabled()
             topic_words = set(topic.lower().split())
@@ -163,10 +252,9 @@ class ResearchAction(BaseAction):
                 if overlap:
                     relevant.append((len(overlap), item))
 
-            # Sort by relevance (most keyword overlap first)
             relevant.sort(key=lambda x: x[0], reverse=True)
 
-            for _, item in relevant[:8]:
+            for _, item in relevant[:3]:  # Only top 3 RSS results (supplementary)
                 text = item.content or item.description
                 summary = ""
                 if text and len(text) > 100:
@@ -180,11 +268,12 @@ class ResearchAction(BaseAction):
                     content=text or "",
                     summary=summary or item.description[:200],
                     keywords=keywords,
+                    source_type="rss",
                 ))
         except Exception as e:
             logger.error(f"RSS search failed: {e}")
 
-        # 2. If we have URLs in the topic, crawl them directly
+        # Also crawl any URLs in the topic
         urls = re.findall(r'https?://[^\s<>"{}|\\^`\[\]]+', topic)
         for url in urls[:3]:
             try:
@@ -194,20 +283,36 @@ class ResearchAction(BaseAction):
             except Exception as e:
                 logger.error(f"Crawl failed for {url}: {e}")
 
-        # 3. Present sources
-        if not session.sources:
+        # Present sources
+        if not session.sources and not session.wolfram_result:
             return (
                 f"No sources found for '{topic}'.\n\n"
                 "Try:\n"
+                "- `research arxiv <query>` — Search arXiv directly\n"
+                "- `research scholar <query>` — Search Semantic Scholar\n"
+                "- `research wolfram <query>` — Ask Wolfram Alpha\n"
                 "- `research url https://specific-article.com`\n"
-                "- A more specific topic\n"
-                "- Enable more news categories: `news enable science`"
+                "- A more specific topic"
             )
 
         session.phase = "selecting"
 
+        # Group by source type for clear display
+        source_icons = {
+            "arxiv": "[arXiv]",
+            "semantic_scholar": "[Scholar]",
+            "wolfram": "[Wolfram]",
+            "rss": "[RSS]",
+            "url": "[Web]",
+        }
+
         for i, source in enumerate(session.sources, 1):
-            lines.append(f"**{i}. {source.title}**")
+            icon = source_icons.get(source.source_type, "[Source]")
+            lines.append(f"**{i}. {icon} {source.title}**")
+            if source.authors:
+                lines.append(f"   Authors: {', '.join(source.authors[:3])}")
+            if source.citation_count:
+                lines.append(f"   Citations: {source.citation_count}")
             if source.summary:
                 lines.append(f"   {source.summary[:150]}...")
             if source.keywords:
@@ -218,13 +323,146 @@ class ResearchAction(BaseAction):
 
         lines.extend([
             "---",
-            f"Found {len(session.sources)} sources.",
+            f"Found {len(session.sources)} sources "
+            f"(arXiv: {sum(1 for s in session.sources if s.source_type == 'arxiv')}, "
+            f"Scholar: {sum(1 for s in session.sources if s.source_type == 'semantic_scholar')}, "
+            f"RSS: {sum(1 for s in session.sources if s.source_type == 'rss')}).",
             "",
             "**Next steps:**",
             "- `research select 1,2,3` — Pick sources for deep analysis",
             "- `research analyze` — Analyze all sources with LLM",
+            "- `research arxiv <query>` — Search arXiv for more",
             "- `research url <url>` — Add a specific URL",
         ])
+
+        return "\n".join(lines)
+
+    async def _search_arxiv(self, query: str, user_id: str) -> str:
+        """Search arXiv specifically."""
+        papers = await search_arxiv(query, max_results=10)
+
+        if not papers:
+            return f"No arXiv papers found for '{query}'."
+
+        # Add to session
+        if user_id not in self._sessions:
+            self._sessions[user_id] = ResearchSession(topic=query)
+        session = self._sessions[user_id]
+
+        lines = [f"**arXiv Search: {query}**", ""]
+
+        for paper in papers:
+            summary = paper.abstract[:500]
+            if len(paper.abstract) > 100:
+                summary = self._summarizer.summarize(paper.abstract, sentences=3)
+
+            keywords = self._summarizer.get_keywords(paper.abstract, top_n=5)
+
+            session.sources.append(ResearchSource(
+                title=paper.title,
+                url=paper.url,
+                content=paper.abstract,
+                summary=summary,
+                keywords=keywords,
+                source_type="arxiv",
+                authors=paper.authors,
+            ))
+
+            idx = len(session.sources)
+            lines.append(f"**{idx}. {paper.title}**")
+            if paper.authors:
+                lines.append(f"   {', '.join(paper.authors[:3])}")
+            lines.append(f"   {paper.published}")
+            lines.append(f"   {summary[:150]}...")
+            lines.append(f"   {paper.url}")
+            lines.append("")
+
+        session.phase = "selecting"
+        lines.append(f"Added {len(papers)} arXiv papers. Use `research select` to pick favorites.")
+
+        return "\n".join(lines)
+
+    async def _search_scholar(self, query: str, user_id: str) -> str:
+        """Search Semantic Scholar specifically."""
+        papers = await search_semantic_scholar(query, max_results=8)
+
+        if not papers:
+            return f"No Semantic Scholar papers found for '{query}'."
+
+        if user_id not in self._sessions:
+            self._sessions[user_id] = ResearchSession(topic=query)
+        session = self._sessions[user_id]
+
+        lines = [f"**Semantic Scholar: {query}**", ""]
+
+        for paper in papers:
+            abstract = paper.abstract or ""
+            summary = abstract[:500]
+            if len(abstract) > 100:
+                summary = self._summarizer.summarize(abstract, sentences=3)
+
+            keywords = self._summarizer.get_keywords(abstract, top_n=5) if abstract else []
+
+            session.sources.append(ResearchSource(
+                title=paper.title,
+                url=paper.url,
+                content=abstract,
+                summary=summary,
+                keywords=keywords,
+                source_type="semantic_scholar",
+                authors=paper.authors,
+                citation_count=paper.citation_count,
+            ))
+
+            idx = len(session.sources)
+            lines.append(f"**{idx}. {paper.title}**")
+            if paper.authors:
+                lines.append(f"   {', '.join(paper.authors[:3])}")
+            if paper.citation_count:
+                lines.append(f"   Citations: {paper.citation_count}")
+            lines.append(f"   {summary[:150]}...")
+            if paper.url:
+                lines.append(f"   {paper.url}")
+            lines.append("")
+
+        session.phase = "selecting"
+        lines.append(f"Added {len(papers)} papers. Use `research select` to pick favorites.")
+
+        return "\n".join(lines)
+
+    async def _search_wolfram(
+        self, query: str, user_id: str, engine: "SafeClaw"
+    ) -> str:
+        """Query Wolfram Alpha specifically."""
+        wolfram_app_id = engine.config.get("apis", {}).get("wolfram_alpha", "")
+
+        result = await query_wolfram_alpha(query, wolfram_app_id)
+
+        if not result:
+            return (
+                f"Wolfram Alpha couldn't answer '{query}'.\n\n"
+                "For full Wolfram Alpha access, add your free App ID to config.yaml:\n"
+                "  apis:\n"
+                '    wolfram_alpha: "YOUR-APP-ID"\n\n'
+                "Get one free at: https://developer.wolframalpha.com/"
+            )
+
+        if user_id not in self._sessions:
+            self._sessions[user_id] = ResearchSession(topic=query)
+        session = self._sessions[user_id]
+        session.wolfram_result = result.result
+
+        lines = [
+            f"**Wolfram Alpha: {query}**",
+            "",
+            result.result,
+            "",
+        ]
+
+        if result.pods:
+            for pod in result.pods[:5]:
+                lines.append(f"**{pod['title']}:** {pod['text']}")
+            lines.append("")
 
         return "\n".join(lines)
 
@@ -239,7 +477,6 @@ class ResearchAction(BaseAction):
         if not source:
             return f"Could not fetch content from {url}"
 
-        # Add to existing session or create new one
         if user_id not in self._sessions:
             self._sessions[user_id] = ResearchSession(topic=url)
 
@@ -283,6 +520,7 @@ class ResearchAction(BaseAction):
                 content=result.text,
                 summary=summary,
                 keywords=keywords,
+                source_type="url",
             )
         except Exception as e:
             logger.error(f"Failed to fetch {url}: {e}")
@@ -311,16 +549,11 @@ class ResearchAction(BaseAction):
         return "Invalid source numbers. Check available sources with `research sources`."
 
     async def _deep_analyze(self, user_id: str, engine: "SafeClaw") -> str:
-        """
-        Phase 2: LLM deep analysis of selected sources.
-
-        Uses the research-specific LLM provider (per-task routing).
-        """
+        """Phase 2: LLM deep analysis of selected sources."""
         session = self._sessions.get(user_id)
         if not session:
             return "No active research session. Start with: research <topic>"
 
-        # Get selected sources, or all if none selected
         selected = [s for s in session.sources if s.selected]
         if not selected:
             selected = session.sources
@@ -331,14 +564,23 @@ class ResearchAction(BaseAction):
         # Build the research prompt
         source_texts = []
         for i, source in enumerate(selected, 1):
-            source_texts.append(
-                f"Source {i}: {source.title}\n"
-                f"URL: {source.url}\n"
-                f"Content: {source.content[:2000]}\n"
-            )
+            source_info = f"Source {i}: {source.title}\n"
+            if source.source_type:
+                source_info += f"Type: {source.source_type}\n"
+            if source.authors:
+                source_info += f"Authors: {', '.join(source.authors[:3])}\n"
+            source_info += f"URL: {source.url}\n"
+            source_info += f"Content: {source.content[:2000]}\n"
+            source_texts.append(source_info)
 
         prompt = (
             f"Research topic: {session.topic}\n\n"
+        )
+
+        if session.wolfram_result:
+            prompt += f"Wolfram Alpha answer: {session.wolfram_result}\n\n"
+
+        prompt += (
             f"Analyze these {len(selected)} sources and provide:\n"
             "1. Key findings across all sources\n"
             "2. Points of agreement and disagreement\n"
@@ -353,13 +595,11 @@ class ResearchAction(BaseAction):
         from safeclaw.core.prompt_builder import PromptBuilder
         from safeclaw.core.writing_style import load_writing_profile
 
-        # Try task-specific provider first, fall back to general
         task_providers = engine.config.get("task_providers", {})
         research_provider = task_providers.get("research")
 
         ai_writer = AIWriter.from_config(engine.config)
         if not ai_writer.providers:
-            # No LLM configured - return extractive summary only
             combined = "\n\n".join(s.content for s in selected if s.content)
             if combined:
                 extractive = self._summarizer.summarize(combined, sentences=10)
@@ -374,7 +614,6 @@ class ResearchAction(BaseAction):
                 )
             return "No content available for analysis."
 
-        # Build dynamic system prompt
         prompt_builder = PromptBuilder()
         writing_profile = await load_writing_profile(engine.memory, user_id)
 
@@ -384,7 +623,6 @@ class ResearchAction(BaseAction):
             topic=session.topic,
         )
 
-        # Call LLM
         response = await ai_writer.generate(
             prompt=prompt,
             provider_label=research_provider,
@@ -412,11 +650,26 @@ class ResearchAction(BaseAction):
         if not session:
             return "No active research session."
 
+        source_icons = {
+            "arxiv": "[arXiv]",
+            "semantic_scholar": "[Scholar]",
+            "wolfram": "[Wolfram]",
+            "rss": "[RSS]",
+            "url": "[Web]",
+        }
+
         lines = [f"**Research: {session.topic}**", f"Phase: {session.phase}", ""]
+
+        if session.wolfram_result:
+            lines.append(f"**Wolfram Alpha:** {session.wolfram_result}")
+            lines.append("")
 
         for i, source in enumerate(session.sources, 1):
             selected = " [SELECTED]" if source.selected else ""
-            lines.append(f"**{i}. {source.title}**{selected}")
+            icon = source_icons.get(source.source_type, "[Source]")
+            lines.append(f"**{i}. {icon} {source.title}**{selected}")
+            if source.authors:
+                lines.append(f"   Authors: {', '.join(source.authors[:3])}")
             if source.summary:
                 lines.append(f"   {source.summary[:150]}...")
             lines.append(f"   {source.url}")
@@ -442,17 +695,28 @@ class ResearchAction(BaseAction):
         """Return research help text."""
         return (
             "**Research Commands**\n\n"
-            "Phase 1 - Gather Sources (No LLM, $0):\n"
-            "  `research <topic>`          — Search feeds & crawl for sources\n"
-            "  `research url <url>`        — Add a specific URL as source\n"
+            "**Sources** (all free, no API key needed):\n"
+            "  - arXiv — Academic papers (CS, math, physics, bio...)\n"
+            "  - Semantic Scholar — Academic papers with citation counts\n"
+            "  - Wolfram Alpha — Computational knowledge & facts\n"
+            "  - RSS feeds — News & blog supplementary results\n\n"
+            "Phase 1 — Gather Sources (No LLM, $0):\n"
+            "  `research <topic>`          — Search all sources at once\n"
+            "  `research arxiv <query>`    — Search arXiv papers\n"
+            "  `research scholar <query>`  — Search Semantic Scholar\n"
+            "  `research wolfram <query>`  — Ask Wolfram Alpha\n"
+            "  `research url <url>`        — Add a specific URL\n"
             "  `research sources`          — View gathered sources\n\n"
-            "Phase 2 - Deep Analysis (LLM, optional):\n"
+            "Phase 2 — Deep Analysis (LLM, optional):\n"
             "  `research select 1,2,3`     — Pick your favorite sources\n"
             "  `research analyze`          — LLM deep dive on selected sources\n"
             "  `research results`          — View analysis results\n\n"
             "The research pipeline:\n"
-            "  Web Search (non-LLM) -> Sumy Summarize (non-LLM) -> "
+            "  arXiv + Scholar + Wolfram (free) -> Sumy Summarize ($0) -> "
             "You Select Sources -> LLM Deep Analysis (optional)\n\n"
+            "Optional: Add a Wolfram Alpha App ID for richer results:\n"
+            "  apis:\n"
+            '    wolfram_alpha: "YOUR-APP-ID"  # Free at developer.wolframalpha.com\n\n'
             "Configure a research-specific LLM in config.yaml:\n"
             "  task_providers:\n"
             '    research: "my-ollama"  # or any configured provider'

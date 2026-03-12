@@ -2,7 +2,40 @@
 
 All notable changes to SafeClaw will be documented in this file.
 
-Every huge milestone, we add something new. We just hit **100 stars!**
+Every huge milestone, we add something new. We just hit **250 stars!**
+
+---
+
+## [0.4.0] - 2026-03-12 — 250-Star Milestone
+
+### Added
+- **Real Research Sources** — Research now searches actual academic and knowledge databases
+  - arXiv API integration (academic papers, free, no API key)
+  - Semantic Scholar integration (academic papers with citation counts, free)
+  - Wolfram Alpha integration (computational knowledge, factual answers)
+  - RSS feeds remain as supplementary sources
+  - New commands: `research arxiv <query>`, `research scholar <query>`, `research wolfram <query>`
+
+- **Auto LLM Installer** — One-command local AI setup
+  - `install llm` detects your platform and installs Ollama automatically
+  - Auto-downloads a model, auto-configures SafeClaw
+  - Model presets: small (1.3GB), default (4.7GB), large (40GB), coding, writing
+  - `llm status` shows installation state and available models
+  - Works on Linux, macOS, and Windows
+
+- **Auto-Learning from User Mistakes** — Parser gets smarter over time
+  - Word-to-number conversion: "select one two three" → "select 1 2 3"
+  - Ordinals: "first", "second", "third" → 1, 2, 3
+  - Common typo auto-correction: "remaind" → "remind", "summerize" → "summarize"
+  - Shorthand expansion: "tmrw" → "tomorrow", "hrs" → "hours"
+  - Auto-learns corrections: when a failed command is followed by a successful one, SafeClaw remembers the mapping for next time
+
+### Changed
+- Version bump to 0.4.0
+- Research action now searches arXiv + Semantic Scholar by default instead of just RSS feeds
+- Parser now auto-normalizes all input before matching
+- CLI banner updated for 250-star milestone
+- Config.yaml now includes wolfram_alpha API key option
 
 ---
 

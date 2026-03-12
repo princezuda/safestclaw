@@ -105,6 +105,9 @@ def create_engine(config_path: Path | None = None) -> SafeClaw:
     # Register flow diagram action
     engine.register_action("flow", _flow_action)
 
+    # Register LLM auto-installer action
+    engine.register_action("llm_setup", _llm_setup_action)
+
     # Load plugins from plugins/official/ and plugins/community/
     plugin_loader = PluginLoader()
     plugin_loader.load_all(engine)
@@ -218,6 +221,39 @@ async def _flow_action(
 ) -> str:
     """Show system architecture flow diagram."""
     return PromptBuilder.get_flow_diagram()
+
+
+async def _llm_setup_action(
+    params: dict, user_id: str, channel: str, engine: SafeClaw
+) -> str:
+    """Handle LLM auto-installation and status commands."""
+    from safeclaw.core.llm_installer import auto_setup, get_status
+
+    raw = params.get("raw_input", "").lower()
+
+    if "status" in raw:
+        return get_status()
+
+    # Extract model preference
+    model = "default"
+    for preset in ["small", "large", "coding", "writing"]:
+        if preset in raw:
+            model = preset
+            break
+
+    # Check if a specific model name was given (e.g., "install llm mistral")
+    for keyword in ["install llm", "install ai", "install ollama",
+                     "setup llm", "setup ai", "setup ollama"]:
+        if keyword in raw:
+            remainder = raw.split(keyword, 1)[-1].strip()
+            if remainder and remainder not in ("status", "help"):
+                model = remainder
+            break
+
+    return await auto_setup(
+        model=model,
+        config_path=engine.config_path,
+    )
 
 
 @app.callback(invoke_without_command=True)

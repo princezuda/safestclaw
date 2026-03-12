@@ -170,14 +170,45 @@ class SafeClaw:
                     user_id=user_id,
                     channel=channel,
                 )
+
+                # Auto-learning: if a previous command failed and this one
+                # succeeded, learn the correction so next time the failed
+                # input maps to the right intent automatically
+                if user_id:
+                    last_failed = await self.memory.get(f"_last_failed:{user_id}")
+                    if last_failed and last_failed != text:
+                        await self.parser.learn_correction(
+                            user_id=user_id,
+                            phrase=last_failed,
+                            correct_intent=parsed.intent,
+                            params=parsed.params,
+                        )
+                        logger.info(
+                            f"Auto-learned: '{last_failed}' -> {parsed.intent}"
+                        )
+                        # Clear the failed command
+                        await self.memory.set(
+                            f"_last_failed:{user_id}", "", ttl_seconds=1
+                        )
+
                 return result
             except Exception as e:
                 logger.error(f"Action failed: {e}")
                 return f"Sorry, that action failed: {e}"
 
-        # No matching intent
+        # No matching intent — auto-learn opportunity
         if parsed.intent:
             return f"I understand you want to '{parsed.intent}', but I don't have that action configured."
+
+        # Track failed command for potential auto-learning
+        # If the user immediately follows up with a successful command,
+        # we can learn the mapping
+        if user_id:
+            await self.memory.set(
+                f"_last_failed:{user_id}",
+                text,
+                ttl_seconds=120,  # Remember for 2 minutes
+            )
 
         return "I didn't understand that command. Try 'help' to see what I can do."
 
@@ -344,13 +375,26 @@ class SafeClaw:
 
         help_lines.extend([
             "",
+            "250-Star Features:",
+            "  • research <topic>     — Search arXiv, Semantic Scholar, Wolfram Alpha",
+            "  • research arxiv <q>   — Search arXiv papers directly",
+            "  • research scholar <q> — Search Semantic Scholar papers",
+            "  • research wolfram <q> — Ask Wolfram Alpha",
+            "  • install llm          — One-command local AI setup (Ollama)",
+            "  • install llm small    — Install a lightweight model",
+            "  • llm status           — Check your local AI status",
+            "",
             "100-Star Features:",
-            "  • research <topic>     — Two-phase research (non-LLM + optional LLM deep dive)",
             "  • code template <type> — Code generation (non-LLM templates + optional LLM)",
             "  • style profile        — View your learned writing style profile",
             "  • style learn          — Feed text to the writing style profiler",
             "  • auto blog            — Configure cron-based auto-blogging (no LLM)",
             "  • flow                 — Show system architecture flow diagram",
+            "",
+            "Smart Input:",
+            "  • Auto-corrects typos (remaind → remind, summerize → summarize)",
+            "  • Word-to-number (select one two three → select 1 2 3)",
+            "  • Learns from your mistakes automatically",
             "",
             "Per-task LLM routing:",
             "  Configure different LLMs for blogging, research, and coding",
