@@ -410,7 +410,7 @@ class BlogAction(BaseAction):
         self, raw_input: str, user_id: str, engine: "SafeClaw"
     ) -> str | None:
         """Handle topic input for AI blog generation (awaiting_topic state)."""
-        topic = raw_input.strip()
+        topic = re.sub(r'(?i)^please\s+', '', raw_input).strip()
 
         if not topic:
             return "Please type a topic for your blog post:"
@@ -705,10 +705,12 @@ class BlogAction(BaseAction):
 
         # Extract topic from command
         topic = re.sub(
-            r'(?i)(ai\s+)?(blog\s+)?(generate|write|create|draft)\s+(a\s+)?(blog\s+)?(post\s+)?(about|on|for)?\s*',
+            r'(?i)(please\s+)?(ai\s+)?(blog\s+)?(generate|write|create|draft)\s+(a\s+)?(blog\s+)?(post\s+)?(about|on|for)?\s*',
             '',
             raw_input,
         ).strip()
+        # Strip any remaining polite prefix
+        topic = re.sub(r'(?i)^please\s+', '', topic).strip()
 
         if not topic:
             return "Please provide a topic. Example: ai blog generate about sustainable technology trends"
