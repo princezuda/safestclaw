@@ -2,7 +2,7 @@
 
 **The zero-cost alternative to OpenClaw. No LLM. No API bills. No prompt injection. Runs on any machine.**
 
-> **100 STARS** — We hit one hundred stars on GitHub! This milestone brings: **Fuzzy Learning & Personalization.** Writing style profiling that learns how you write, a research pipeline with two-phase gather-then-analyze workflow, a coding toolbox with 7 templates and offline utilities, auto-blog scheduling with cron, and a task-aware prompt builder. All new features work offline with zero LLM cost — AI is optional for deep analysis. [See the new features below.](#-writing-style-profiler) Previous milestone: [Blogging — two modes.](#blogging-guide)
+> **100 STARS** — We hit one hundred stars on GitHub! This milestone brings: **Fuzzy Learning & Personalization.** Writing style profiling that learns how you write, a research pipeline with two-phase gather-then-analyze workflow, a coding toolbox with 7 templates and offline utilities, auto-blog scheduling with cron, and a task-aware prompt builder. All new features work offline with zero LLM cost — AI is optional for deep analysis. [See the new features below.](#-writing-style-profiler) Previous milestone: [Blogging — two modes.](#blogging-guide) Next milestone: **250 stars** 🤯
 
 While OpenClaw users are burning [$200/day](https://www.notebookcheck.net/Free-to-use-AI-tool-can-burn-through-hundreds-of-Dollars-per-day-OpenClaw-has-absurdly-high-token-use.1219925.0.html) and [$3,600/month](https://dev.to/thegdsks/i-tried-the-free-ai-agent-with-124k-github-stars-heres-my-500-reality-check-2885) on API tokens, SafeClaw delivers 90% of the functionality using traditional programming — rule-based parsing, ML pipelines, and local-first tools. **Your API bill: $0. Forever.**
 
