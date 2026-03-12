@@ -41,27 +41,31 @@ class CLIChannel(BaseChannel):
         self.console.print()
         self.console.print(
             Panel.fit(
-                "[bold yellow]          50 STARS          [/bold yellow]\n"
-                "[bold white]We hit fifty stars on GitHub![/bold white]\n"
+                "[bold yellow]         100 STARS          [/bold yellow]\n"
+                "[bold white]We hit one hundred stars on GitHub![/bold white]\n"
                 "\n"
                 "[dim]Every huge milestone, we add something new.[/dim]\n"
-                "[bold cyan]NEW:[/bold cyan] [white]AI-Powered Blogging[/white]\n"
-                "[dim]Type[/dim] [bold]blog[/bold] [dim]to get started.[/dim]\n"
-                "[dim]AI writes for you, or go manual. Publish to[/dim]\n"
-                "[dim]WordPress, Joomla, SFTP, or any API.[/dim]\n"
+                "[bold cyan]NEW:[/bold cyan] [white]Fuzzy Learning & Personalization[/white]\n"
+                "[dim]Writing style profiler, research pipeline,[/dim]\n"
+                "[dim]coding toolbox (7 templates), auto-blog[/dim]\n"
+                "[dim]scheduling, and task-aware prompt builder.[/dim]\n"
+                "[dim]Type[/dim] [bold]help[/bold] [dim]to see all commands.[/dim]\n"
                 "\n"
-                "[dim]Next milestone:[/dim] [bold]100 stars[/bold]",
+                "[dim]Next milestone:[/dim] [bold]250 stars[/bold] [yellow]:exploding_head:[/yellow]",
                 border_style="yellow",
                 title="[bold yellow] MILESTONE [/bold yellow]",
-                subtitle="[dim]safeclaw 0.2.1[/dim]",
+                subtitle="[dim]safeclaw 0.3.0[/dim]",
             )
         )
         self.console.print()
         self.console.print(
             Panel.fit(
                 "[bold green]SafeClaw[/bold green] - Privacy-first automation assistant\n"
-                "Type [bold]blog[/bold] to start blogging, "
-                "[bold]help[/bold] for commands, [bold]quit[/bold] to exit",
+                "Type [bold]style learn[/bold] to teach your writing style, "
+                "[bold]code templates[/bold] for boilerplate,\n"
+                "[bold]research[/bold] to gather sources, "
+                "[bold]blog[/bold] to start blogging, "
+                "[bold]help[/bold] for all commands",
                 border_style="green",
             )
         )
