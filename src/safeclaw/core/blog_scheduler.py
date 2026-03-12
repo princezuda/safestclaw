@@ -24,9 +24,7 @@ from safeclaw.core.feeds import Feed, FeedReader
 from safeclaw.core.summarizer import Summarizer, SummaryMethod
 
 if TYPE_CHECKING:
-    from safeclaw.core.blog_publisher import BlogPublisher
     from safeclaw.core.engine import SafeClaw
-    from safeclaw.core.scheduler import Scheduler
 
 logger = logging.getLogger(__name__)
 

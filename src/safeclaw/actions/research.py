@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 from safeclaw.actions.base import BaseAction
 from safeclaw.core.crawler import Crawler
 from safeclaw.core.feeds import FeedReader
-from safeclaw.core.summarizer import Summarizer, SummaryMethod
+from safeclaw.core.summarizer import Summarizer
 
 if TYPE_CHECKING:
     from safeclaw.core.engine import SafeClaw
@@ -249,7 +249,7 @@ class ResearchAction(BaseAction):
         lines = [
             f"**Added source: {source.title}**",
             "",
-            f"**Summary (extractive, no LLM):**",
+            "**Summary (extractive, no LLM):**",
             source.summary,
             "",
         ]
@@ -349,7 +349,7 @@ class ResearchAction(BaseAction):
         )
 
         # Get the research LLM (per-task routing)
-        from safeclaw.core.ai_writer import AIWriter, load_ai_writer_from_yaml
+        from safeclaw.core.ai_writer import AIWriter
         from safeclaw.core.prompt_builder import PromptBuilder
         from safeclaw.core.writing_style import load_writing_profile
 

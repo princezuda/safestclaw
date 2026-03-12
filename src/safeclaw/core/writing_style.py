@@ -18,7 +18,6 @@ Features:
 All deterministic. All local. All private.
 """
 
-import json
 import logging
 import math
 import re
@@ -395,14 +394,14 @@ class WritingStyleProfiler:
 
         # Standard deviation
         mean = profile.avg_sentence_length
-        variance = sum((l - mean) ** 2 for l in lengths) / len(lengths)
+        variance = sum((n - mean) ** 2 for n in lengths) / len(lengths)
         profile.sentence_length_std = math.sqrt(variance)
 
         # Ratios
         total = len(lengths)
-        profile.short_sentence_ratio = sum(1 for l in lengths if l < 10) / total
-        profile.medium_sentence_ratio = sum(1 for l in lengths if 10 <= l <= 25) / total
-        profile.long_sentence_ratio = sum(1 for l in lengths if l > 25) / total
+        profile.short_sentence_ratio = sum(1 for n in lengths if n < 10) / total
+        profile.medium_sentence_ratio = sum(1 for n in lengths if 10 <= n <= 25) / total
+        profile.long_sentence_ratio = sum(1 for n in lengths if n > 25) / total
 
     def _analyze_vocabulary(self, profile: WritingProfile) -> None:
         """Analyze vocabulary richness and complexity."""

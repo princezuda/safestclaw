@@ -415,8 +415,8 @@ class CodeAction(BaseAction):
 
         lines = content.splitlines()
         lang = LANGUAGE_MAP.get(path.suffix, "unknown")
-        blank = sum(1 for l in lines if not l.strip())
-        comment = sum(1 for l in lines if l.strip().startswith(("#", "//", "/*", "*", "--")))
+        blank = sum(1 for line in lines if not line.strip())
+        comment = sum(1 for line in lines if line.strip().startswith(("#", "//", "/*", "*", "--")))
 
         return (
             f"**{path.name}** ({lang})\n"
