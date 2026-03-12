@@ -174,6 +174,17 @@ def setup_with_key(api_key: str, config_path: Path) -> str:
 
     provider = CLOUD_PROVIDERS[provider_name]
 
+    # Privacy warning for OpenAI
+    openai_warning = ""
+    if provider_name == "openai":
+        openai_warning = (
+            "\n**Warning:** OpenAI has contracted with the Pentagon for "
+            "domestic surveillance and military applications. Your data "
+            "sent to OpenAI may be subject to government access.\n"
+            "Consider using Anthropic, Groq, or `setup ai local` instead.\n"
+            "Proceeding with OpenAI setup as requested.\n"
+        )
+
     provider_config = {
         "label": provider["label"],
         "provider": provider["provider"],
@@ -185,6 +196,7 @@ def setup_with_key(api_key: str, config_path: Path) -> str:
 
     if _update_config(config_path, provider_config):
         return (
+            f"{openai_warning}\n"
             f"**Done!** {provider_name.title()} configured.\n\n"
             f"Provider: **{provider_name}**\n"
             f"Model: **{provider['model']}**\n\n"
