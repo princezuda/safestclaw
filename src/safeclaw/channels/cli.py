@@ -41,30 +41,29 @@ class CLIChannel(BaseChannel):
         self.console.print()
         self.console.print(
             Panel.fit(
-                "[bold yellow]         100 STARS          [/bold yellow]\n"
-                "[bold white]We hit one hundred stars on GitHub![/bold white]\n"
+                "[bold yellow]         250 STARS          [/bold yellow]\n"
+                "[bold white]We hit 250 stars on GitHub![/bold white]\n"
                 "\n"
                 "[dim]Every huge milestone, we add something new.[/dim]\n"
-                "[bold cyan]NEW:[/bold cyan] [white]Fuzzy Learning & Personalization[/white]\n"
-                "[dim]Writing style profiler, research pipeline,[/dim]\n"
-                "[dim]coding toolbox (7 templates), auto-blog[/dim]\n"
-                "[dim]scheduling, and task-aware prompt builder.[/dim]\n"
+                "[bold cyan]NEW:[/bold cyan] [white]Real Research + Auto LLM + Smart Learning[/white]\n"
+                "[dim]arXiv & Semantic Scholar papers, Wolfram Alpha,[/dim]\n"
+                "[dim]setup ai <your-key> instant config, auto-learning[/dim]\n"
+                "[dim]from your mistakes (typos, word-numbers, corrections).[/dim]\n"
                 "[dim]Type[/dim] [bold]help[/bold] [dim]to see all commands.[/dim]\n"
                 "\n"
-                "[dim]Next milestone:[/dim] [bold]250 stars[/bold] [yellow]:exploding_head:[/yellow]",
+                "[dim]Next milestone:[/dim] [bold]500 stars[/bold] [yellow]:exploding_head:[/yellow]",
                 border_style="yellow",
                 title="[bold yellow] MILESTONE [/bold yellow]",
-                subtitle="[dim]safeclaw 0.3.0[/dim]",
+                subtitle="[dim]safeclaw 0.4.0[/dim]",
             )
         )
         self.console.print()
         self.console.print(
             Panel.fit(
                 "[bold green]SafeClaw[/bold green] - Privacy-first automation assistant\n"
-                "Type [bold]style learn[/bold] to teach your writing style, "
-                "[bold]code templates[/bold] for boilerplate,\n"
-                "[bold]research[/bold] to gather sources, "
-                "[bold]blog[/bold] to start blogging, "
+                "Type [bold]setup ai <your-key>[/bold] to configure AI, "
+                "[bold]research <topic>[/bold] for arXiv/Scholar,\n"
+                "[bold]setup ai local[/bold] for free local AI, "
                 "[bold]help[/bold] for all commands",
                 border_style="green",
             )

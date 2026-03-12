@@ -105,6 +105,9 @@ def create_engine(config_path: Path | None = None) -> SafeClaw:
     # Register flow diagram action
     engine.register_action("flow", _flow_action)
 
+    # Register LLM auto-installer action
+    engine.register_action("llm_setup", _llm_setup_action)
+
     # Load plugins from plugins/official/ and plugins/community/
     plugin_loader = PluginLoader()
     plugin_loader.load_all(engine)
@@ -218,6 +221,35 @@ async def _flow_action(
 ) -> str:
     """Show system architecture flow diagram."""
     return PromptBuilder.get_flow_diagram()
+
+
+async def _llm_setup_action(
+    params: dict, user_id: str, channel: str, engine: SafeClaw
+) -> str:
+    """Handle AI setup — enter your key or install local AI."""
+    from safeclaw.core.llm_installer import auto_setup
+
+    raw = params.get("raw_input", "")
+
+    # Extract everything after the trigger keyword
+    arg = ""
+    for keyword in ["setup ai", "install llm", "install ai", "install ollama",
+                     "setup llm", "setup ollama", "llm status", "ai status",
+                     "llm setup", "ai setup", "local ai", "get ollama"]:
+        lower = raw.lower()
+        if keyword in lower:
+            idx = lower.index(keyword) + len(keyword)
+            arg = raw[idx:].strip()
+            break
+
+    # "llm status" / "ai status" → pass "status"
+    if "status" in raw.lower() and not arg:
+        arg = "status"
+
+    return await auto_setup(
+        arg=arg,
+        config_path=engine.config_path,
+    )
 
 
 @app.callback(invoke_without_command=True)

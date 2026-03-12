@@ -7,6 +7,7 @@ No GenAI needed! Uses:
 - Slot filling (dates, times, entities)
 - Fuzzy matching for typo tolerance
 - User-learned patterns from corrections
+- Auto-learning from user mistakes (word-to-number, typo correction)
 - Multilingual command understanding (deterministic, no AI)
 """
 
@@ -29,6 +30,112 @@ if TYPE_CHECKING:
     from safeclaw.core.memory import Memory
 
 logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Smart Input Normalization — converts natural language quirks into
+# machine-readable form BEFORE any intent matching happens.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Word-to-number mapping (supports ordinals too)
+WORD_TO_NUMBER = {
+    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+    "ten": "10", "eleven": "11", "twelve": "12", "thirteen": "13",
+    "fourteen": "14", "fifteen": "15", "sixteen": "16", "seventeen": "17",
+    "eighteen": "18", "nineteen": "19", "twenty": "20",
+    "thirty": "30", "forty": "40", "fifty": "50",
+    "sixty": "60", "seventy": "70", "eighty": "80", "ninety": "90",
+    "hundred": "100",
+    # Ordinals
+    "first": "1", "second": "2", "third": "3", "fourth": "4",
+    "fifth": "5", "sixth": "6", "seventh": "7", "eighth": "8",
+    "ninth": "9", "tenth": "10",
+}
+
+# Common misspellings / shorthand that users type
+COMMON_CORRECTIONS = {
+    "remaind": "remind", "remimd": "remind", "reminde": "remind",
+    "remmber": "remember", "rember": "remember",
+    "summerize": "summarize", "sumarize": "summarize", "summarise": "summarize",
+    "analize": "analyze", "analyse": "analyze", "analze": "analyze",
+    "wether": "weather", "wheather": "weather", "weathr": "weather",
+    "calender": "calendar", "calandar": "calendar",
+    "scedule": "schedule", "schedual": "schedule", "shedule": "schedule",
+    "recearch": "research", "reserch": "research", "reasearch": "research",
+    "reasrch": "research",
+    "pubish": "publish", "publsh": "publish",
+    "tempalte": "template", "templete": "template",
+    "crawel": "crawl", "crawal": "crawl",
+    "doccument": "document", "documnet": "document",
+    "notifiy": "notify", "notfy": "notify",
+    "breifing": "briefing", "breiifng": "briefing",
+    "instll": "install", "instal": "install",
+    "plz": "please", "pls": "please",
+    "tmrw": "tomorrow", "tmr": "tomorrow", "tmrow": "tomorrow",
+    "yr": "year", "yrs": "years",
+    "hr": "hour", "hrs": "hours",
+    "min": "minute", "mins": "minutes",
+    "sec": "second", "secs": "seconds",
+}
+
+
+def normalize_text(text: str) -> str:
+    """
+    Smart text normalization — fix common mistakes before parsing.
+
+    This runs automatically on every input:
+    1. Fix common misspellings (remaind -> remind)
+    2. Convert word-numbers to digits when they appear alone or in
+       contexts like "research select one two three"
+    3. Normalize whitespace
+
+    Args:
+        text: Raw user input
+
+    Returns:
+        Normalized text with corrections applied
+    """
+    if not text:
+        return text
+
+    words = text.split()
+    corrected = []
+    changes_made = []
+
+    for word in words:
+        lower = word.lower()
+        # Strip trailing punctuation for matching but preserve it
+        stripped = lower.rstrip(".,!?;:")
+        trailing = lower[len(stripped):]
+
+        # Check common corrections first
+        if stripped in COMMON_CORRECTIONS:
+            fixed = COMMON_CORRECTIONS[stripped]
+            # Preserve original case pattern
+            if word[0].isupper():
+                fixed = fixed.capitalize()
+            corrected.append(fixed + trailing)
+            changes_made.append((word, fixed))
+            continue
+
+        # Check word-to-number (only for standalone words, not inside URLs etc.)
+        if stripped in WORD_TO_NUMBER:
+            corrected.append(WORD_TO_NUMBER[stripped] + trailing)
+            changes_made.append((word, WORD_TO_NUMBER[stripped]))
+            continue
+
+        corrected.append(word)
+
+    result = " ".join(corrected)
+
+    if changes_made:
+        logger.debug(
+            "Auto-corrected input: %s",
+            ", ".join(f"'{old}' -> '{new}'" for old, new in changes_made),
+        )
+
+    return result
 
 
 # Common phrase variations that map to core intents
@@ -182,6 +289,31 @@ PHRASE_VARIATIONS = {
         "research results",
         "deep dive",
         "research help",
+        "research arxiv",
+        "research scholar",
+        "research wolfram",
+        "arxiv search",
+        "academic search",
+        "find papers",
+        "search papers",
+    ],
+    "llm_setup": [
+        "install llm",
+        "install ai",
+        "setup llm",
+        "setup ai",
+        "setup ollama",
+        "install ollama",
+        "llm status",
+        "ai status",
+        "llm setup",
+        "ai setup",
+        "local ai",
+        "get ollama",
+        "enter key",
+        "api key",
+        "set key",
+        "add key",
     ],
     "code": [
         "code",
@@ -638,19 +770,27 @@ class CommandParser:
             ),
             IntentPattern(
                 intent="research",
-                keywords=["research", "investigate", "look up", "deep dive"],
+                keywords=["research", "investigate", "look up", "deep dive",
+                          "arxiv", "scholar", "wolfram"],
                 patterns=[
                     r"^research$",
                     r"research\s+help",
                     r"research\s+url\s+(.+)",
+                    r"research\s+arxiv\s+(.+)",
+                    r"research\s+scholar\s+(.+)",
+                    r"research\s+wolfram\s+(.+)",
                     r"research\s+select\s+(.+)",
                     r"research\s+(?:analyze|deep)",
                     r"research\s+sources",
                     r"research\s+results",
                     r"(?:research|investigate|look\s+up|find\s+out\s+about)\s+(.+)",
+                    r"(?:find|search)\s+(?:papers?|articles?)\s+(?:on|about)\s+(.+)",
                 ],
                 examples=[
                     "research artificial intelligence trends",
+                    "research arxiv quantum computing",
+                    "research scholar machine learning",
+                    "research wolfram integrate x^2",
                     "research url https://example.com/article",
                     "research select 1,2,3",
                     "research analyze",
@@ -731,6 +871,26 @@ class CommandParser:
                     "how does it work",
                 ],
                 slots=[],
+            ),
+            IntentPattern(
+                intent="llm_setup",
+                keywords=["install llm", "install ai", "setup llm", "setup ai",
+                          "install ollama", "setup ollama", "llm status", "ai status"],
+                patterns=[
+                    r"install\s+(?:llm|ai|ollama)\s*(.*)",
+                    r"setup\s+(?:llm|ai|ollama)\s*(.*)",
+                    r"(?:llm|ai|ollama)\s+(?:status|setup|install)\s*(.*)",
+                    r"(?:get|download)\s+(?:llm|ai|ollama)\s*(.*)",
+                    r"local\s+ai\s*(.*)",
+                ],
+                examples=[
+                    "install llm",
+                    "install llm small",
+                    "setup ai",
+                    "llm status",
+                    "install ollama",
+                ],
+                slots=["model"],
             ),
         ]
 
@@ -821,6 +981,7 @@ class CommandParser:
         Parse user input into a structured command.
 
         Returns ParsedCommand with intent, confidence, and extracted params.
+        Automatically normalizes input (word-to-number, typo correction).
 
         Args:
             text: User input to parse
@@ -831,6 +992,9 @@ class CommandParser:
 
         if not text:
             return result
+
+        # Smart normalization: fix typos, convert word-numbers
+        text = normalize_text(text)
 
         # Normalize text
         normalized = text.lower()
@@ -1173,7 +1337,7 @@ class CommandParser:
         Returns:
             CommandChain with list of ParsedCommands
         """
-        text = text.strip()
+        text = normalize_text(text.strip())
 
         # Split into segments
         segments, chain_type = self._split_chain(text)
