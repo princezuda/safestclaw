@@ -454,13 +454,14 @@ class BlogAction(BaseAction):
             "\n"
             "**What would you like to do?**\n"
             "\n"
-            "  **edit blog** <your changes>  - Replace with your edits\n"
-            "  **ai rewrite blog**           - Have AI polish/rewrite it\n"
-            "  **ai expand blog**            - Have AI make it longer\n"
-            "  **publish blog**              - Save as .txt locally\n"
-            "  **publish blog to <target>**  - Publish to WordPress/Joomla/SFTP\n"
-            "  **ai headlines**              - Generate headline options\n"
-            "  **blog**                      - Start over\n"
+            "  **edit blog** <your changes>               - Replace with your edits\n"
+            "  **ai rewrite blog**                        - Have AI polish/rewrite it\n"
+            "  **ai expand blog**                         - Have AI make it longer\n"
+            "  **ai headlines**                           - Generate headline options\n"
+            "  **publish blog**                           - Save as .txt locally\n"
+            "  **publish blog to wp://site.com u pass**   - Publish (shows preview first)\n"
+            "  **publish blog to <saved-target>**         - Publish to configured target\n"
+            "  **blog**                                   - Start over\n"
             "\n"
             "Or just type more text to add to the draft."
         )
@@ -1700,21 +1701,26 @@ class BlogAction(BaseAction):
                 "  ai providers  - See cloud AI providers and API key setup\n"
             )
 
-        publish_section = ""
+        publish_section = (
+            "\n**Publish remotely (no config needed):**\n"
+            "  publish blog to sftp://host user pass           - SFTP\n"
+            "  publish blog to sftp://host:port user pass /path\n"
+            "  publish blog to wp://mysite.com user pass       - WordPress\n"
+            "  publish blog to joomla://mysite.com user pass   - Joomla\n"
+            "  publish blog to api://mysite.com/endpoint key   - Generic API\n"
+        )
         if self.publisher and self.publisher.targets:
             targets = ", ".join(self.publisher.targets.keys())
-            publish_section = (
-                f"\n**Publish remotely ({targets}):**\n"
+            publish_section += (
+                f"\n**Saved targets ({targets}):**\n"
                 "  publish blog to <target>        - Publish to specific target\n"
                 "  publish blog to all             - Publish to all targets\n"
                 "  list publish targets            - Show configured targets\n"
             )
-        else:
-            publish_section = (
-                "\n**Publishing (not configured):**\n"
-                "  Supports: WordPress, Joomla, SFTP, generic API\n"
-                "  Add publish_targets in config/config.yaml\n"
-            )
+        publish_section += (
+            "\n  After typing a publish command you'll see a preview.\n"
+            "  confirm / change title <new> / edit blog / cancel\n"
+        )
 
         frontpage_section = ""
         if self.frontpage:
