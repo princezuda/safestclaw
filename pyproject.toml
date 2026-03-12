@@ -1,6 +1,6 @@
 [project]
 name = "safeclaw"
-version = "0.4.0"
+version = "0.3.2"
 description = "A privacy-first personal automation assistant - no GenAI required, optional AI for blogging, research, and coding"
 readme = "README.md"
 license = {text = "MIT"}

@@ -54,7 +54,7 @@ class CLIChannel(BaseChannel):
                 "[dim]Next milestone:[/dim] [bold]500 stars[/bold] [yellow]:exploding_head:[/yellow]",
                 border_style="yellow",
                 title="[bold yellow] MILESTONE [/bold yellow]",
-                subtitle="[dim]safeclaw 0.4.0[/dim]",
+                subtitle="[dim]safeclaw 0.3.2[/dim]",
             )
         )
         self.console.print()
@@ -111,7 +111,13 @@ class CLIChannel(BaseChannel):
         self.console.print(prompt, end="")
 
         loop = asyncio.get_event_loop()
-        line = await loop.run_in_executor(None, sys.stdin.readline)
+        # Use a daemon thread so it won't block process exit
+        import concurrent.futures
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            line = await loop.run_in_executor(executor, sys.stdin.readline)
+        finally:
+            executor.shutdown(wait=False)
         return line.strip()
 
     def _display_response(self, response: str) -> None:

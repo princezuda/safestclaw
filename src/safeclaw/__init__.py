@@ -18,7 +18,7 @@ No GenAI required for core features. Optional AI for blogging, research, coding.
 - Non-deterministic system prompts (context-aware, learned from user)
 """
 
-__version__ = "0.4.0"
+__version__ = "0.3.2"
 __author__ = "SafeClaw Contributors"
 
 from safeclaw.core.engine import SafeClaw

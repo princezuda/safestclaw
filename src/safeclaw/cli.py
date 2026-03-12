@@ -246,10 +246,22 @@ async def _llm_setup_action(
     if "status" in raw.lower() and not arg:
         arg = "status"
 
-    return await auto_setup(
+    result = await auto_setup(
         arg=arg,
         config_path=engine.config_path,
     )
+
+    # Reload in-memory config so blog/research/code actions pick up the new provider
+    engine.load_config()
+
+    # Reset lazy-initialized actions so they re-read the updated config
+    for action_handler in engine.actions.values():
+        # Action handlers are bound methods — get the underlying object
+        obj = getattr(action_handler, "__self__", None)
+        if obj and hasattr(obj, "_initialized"):
+            obj._initialized = False
+
+    return result
 
 
 @app.callback(invoke_without_command=True)
@@ -274,7 +286,14 @@ def main(
 
     # If no subcommand, start interactive CLI
     if ctx.invoked_subcommand is None:
-        asyncio.run(run_cli(config))
+        try:
+            asyncio.run(run_cli(config))
+        except KeyboardInterrupt:
+            pass
+        finally:
+            # Force exit — prevents hanging from lingering threads
+            import os
+            os._exit(0)
 
 
 async def run_cli(config_path: Path | None = None) -> None:
@@ -297,7 +316,13 @@ def run(
 ):
     """Start SafeClaw with configured channels."""
     setup_logging(verbose)
-    asyncio.run(_run_all(config, webhook, telegram))
+    try:
+        asyncio.run(_run_all(config, webhook, telegram))
+    except KeyboardInterrupt:
+        pass
+    finally:
+        import os
+        os._exit(0)
 
 
 async def _run_all(

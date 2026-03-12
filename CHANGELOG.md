@@ -6,7 +6,7 @@ Every huge milestone, we add something new. We just hit **250 stars!**
 
 ---
 
-## [0.4.0] - 2026-03-12 — 250-Star Milestone
+## [0.3.2] - 2026-03-12 — 250-Star Milestone
 
 ### Added
 - **Real Research Sources** — Research now searches actual academic and knowledge databases

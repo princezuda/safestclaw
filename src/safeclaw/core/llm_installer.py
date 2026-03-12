@@ -110,6 +110,9 @@ def _detect_provider(api_key: str) -> str | None:
 def _update_config(config_path: Path, provider_config: dict) -> bool:
     """Update config.yaml with a new AI provider."""
     try:
+        # Ensure parent directory exists (fresh install / Windows)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+
         if config_path.exists():
             with open(config_path) as f:
                 config = yaml.safe_load(f) or {}
@@ -436,7 +439,7 @@ async def auto_setup(
 
     # "status" — show current setup
     if arg == "status":
-        return get_status()
+        return get_status(cfg)
 
     # Could be a model preset for local
     if arg in LOCAL_MODELS:
@@ -480,12 +483,12 @@ def _help() -> str:
     )
 
 
-def get_status() -> str:
+def get_status(config_path: Path | None = None) -> str:
     """Get current AI setup status."""
     lines = ["**AI Status**", ""]
 
     # Check config for cloud providers
-    cfg_path = Path("config/config.yaml")
+    cfg_path = config_path or Path("config/config.yaml")
     if cfg_path.exists():
         try:
             with open(cfg_path) as f:

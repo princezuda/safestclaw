@@ -332,6 +332,8 @@ class SafeClaw:
             await asyncio.gather(*channel_tasks)
         except asyncio.CancelledError:
             logger.info("SafeClaw shutting down...")
+        finally:
+            await self.stop()
 
     async def stop(self) -> None:
         """Stop the SafeClaw engine."""
