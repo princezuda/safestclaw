@@ -26,6 +26,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+import yaml
+
 from safeclaw.actions.base import BaseAction
 from safeclaw.core.ai_writer import AIWriter, load_ai_writer_from_yaml
 from safeclaw.core.blog_publisher import BlogPublisher, PublishTarget, PublishTargetType
@@ -208,6 +210,8 @@ class BlogAction(BaseAction):
             return self._ai_switch_provider(raw_input)
 
         # Publishing commands
+        if self._is_setup_publish(lower):
+            return await self._setup_publish(raw_input, user_id, engine)
         if self._is_publish_remote(lower):
             return await self._publish_remote(raw_input, user_id)
         if self._is_list_targets(lower):
@@ -650,6 +654,14 @@ class BlogAction(BaseAction):
             text,
         ))
 
+    def _is_setup_publish(self, text: str) -> bool:
+        return bool(re.search(
+            r"setup\s+(blog\s+)?publish|"
+            r"setup\s+publish\s+blog|"
+            r"(save|add|store)\s+(blog\s+)?publish\s+target",
+            text,
+        ))
+
     def _is_list_targets(self, text: str) -> bool:
         return bool(re.search(
             r"(list|show)\s+(publish|upload|deploy)\s*targets?|"
@@ -908,6 +920,178 @@ class BlogAction(BaseAction):
             return f"Provider '{label}' not found. Available: {available}"
 
     # ── Publishing operations ────────────────────────────────────────────────
+
+    # ── Publish target setup (saves to config, no YAML editing needed) ──────
+
+    async def _setup_publish(self, raw_input: str, user_id: str, engine: "SafeClaw") -> str:
+        """
+        Set up a permanent publish target without touching config files.
+
+        Usage:
+          setup blog publish wp://mysite.com user pass
+          setup blog publish sftp://host user pass /remote/path
+          setup blog publish joomla://cms.example.com user token
+          setup blog publish api://api.example.com/posts api-key
+          setup blog publish list
+          setup blog publish remove <label>
+        """
+        lower = raw_input.lower().strip()
+
+        # List saved targets
+        if re.search(r'\b(list|show|ls)\b', lower.split("publish", 1)[-1]):
+            return self._list_publish_targets()
+
+        # Remove a target
+        remove_m = re.search(r'\b(?:remove|delete|rm)\s+(\S+)', lower)
+        if remove_m:
+            label = remove_m.group(1)
+            return self._remove_publish_target(label, engine)
+
+        # Parse inline target from command
+        target = self._parse_inline_target(raw_input)
+        if not target:
+            return self._setup_publish_help()
+
+        # Save to config.yaml for persistence
+        saved = self._save_publish_target_to_config(target, engine)
+
+        # Also register in-memory so it's usable immediately without restart
+        if not self.publisher:
+            self.publisher = BlogPublisher()
+        self.publisher.add_target(target)
+
+        location = target.url or target.sftp_host
+        if saved:
+            return (
+                f"**Publish target saved!**\n\n"
+                f"  Label:    {target.label}\n"
+                f"  Type:     {target.target_type.value}\n"
+                f"  Location: {location}\n\n"
+                f"Use it any time:\n"
+                f"  publish blog to {target.label}\n"
+                f"  publish blog to all\n\n"
+                f"Remove later with:  setup blog publish remove {target.label}\n"
+                f"List all targets:   setup blog publish list"
+            )
+        else:
+            return (
+                f"**Target active this session** (could not write to config).\n\n"
+                f"  Label:    {target.label}\n"
+                f"  Type:     {target.target_type.value}\n"
+                f"  Location: {location}\n\n"
+                f"To save permanently add to config/config.yaml under publish_targets."
+            )
+
+    def _setup_publish_help(self) -> str:
+        return (
+            "**Setup a permanent publish target — no config files needed**\n\n"
+            "  setup blog publish wp://mysite.com user app-password\n"
+            "  setup blog publish sftp://host:port user pass /remote/path\n"
+            "  setup blog publish joomla://cms.example.com user token\n"
+            "  setup blog publish api://api.example.com/posts api-key\n\n"
+            "After setup, publish any time with:\n"
+            "  publish blog to <label>\n"
+            "  publish blog to all\n\n"
+            "Other setup commands:\n"
+            "  setup blog publish list          - Show saved targets\n"
+            "  setup blog publish remove <label> - Remove a target"
+        )
+
+    def _save_publish_target_to_config(self, target: PublishTarget, engine: "SafeClaw") -> bool:
+        """Write a publish target into config.yaml so it survives restarts."""
+        config_path = getattr(engine, "config_path", None)
+        if not config_path:
+            return False
+        try:
+            config_path = Path(config_path)
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if config_path.exists():
+                with open(config_path) as f:
+                    config = yaml.safe_load(f) or {}
+            else:
+                config = {}
+
+            targets = config.get("publish_targets") or []
+
+            # Build a minimal dict — only include non-default fields
+            t_dict: dict = {
+                "label": target.label,
+                "type": target.target_type.value,
+            }
+            if target.url:
+                t_dict["url"] = target.url
+            if target.username:
+                t_dict["username"] = target.username
+            if target.password:
+                t_dict["password"] = target.password
+            if target.api_key:
+                t_dict["api_key"] = target.api_key
+            if target.sftp_host:
+                t_dict["sftp_host"] = target.sftp_host
+            if target.sftp_port != 22:
+                t_dict["sftp_port"] = target.sftp_port
+            if target.sftp_user:
+                t_dict["sftp_user"] = target.sftp_user
+            if target.sftp_password:
+                t_dict["sftp_password"] = target.sftp_password
+            if target.sftp_key_path:
+                t_dict["sftp_key_path"] = target.sftp_key_path
+            if target.sftp_remote_path != "/var/www/html/blog":
+                t_dict["sftp_remote_path"] = target.sftp_remote_path
+
+            # Update existing or append
+            for i, t in enumerate(targets):
+                if isinstance(t, dict) and t.get("label") == target.label:
+                    targets[i] = t_dict
+                    break
+            else:
+                targets.append(t_dict)
+
+            config["publish_targets"] = targets
+            with open(config_path, "w") as f:
+                yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+            # Keep engine config in sync so the change is live immediately
+            engine.config["publish_targets"] = targets
+
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save publish target: {e}")
+            return False
+
+    def _remove_publish_target(self, label: str, engine: "SafeClaw") -> str:
+        """Remove a publish target from config.yaml and from memory."""
+        removed_memory = False
+        if self.publisher and label in self.publisher.targets:
+            del self.publisher.targets[label]
+            removed_memory = True
+
+        config_path = getattr(engine, "config_path", None)
+        if not config_path or not Path(config_path).exists():
+            if removed_memory:
+                return f"Removed '{label}' from this session (it was not in saved config)."
+            return f"Target '{label}' not found."
+
+        try:
+            with open(config_path) as f:
+                config = yaml.safe_load(f) or {}
+
+            targets = config.get("publish_targets") or []
+            original_len = len(targets)
+            targets = [t for t in targets if not (isinstance(t, dict) and t.get("label") == label)]
+
+            if len(targets) == original_len and not removed_memory:
+                return f"Target '{label}' not found. Use 'setup blog publish list' to see targets."
+
+            config["publish_targets"] = targets
+            with open(config_path, "w") as f:
+                yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+            engine.config["publish_targets"] = targets
+
+            return f"Removed publish target **{label}**."
+        except Exception as e:
+            return f"Error removing target: {e}"
 
     async def _publish_remote(self, raw_input: str, user_id: str) -> str:
         """Stage a remote publish — show preview and wait for confirmation."""
@@ -1619,6 +1803,10 @@ class BlogAction(BaseAction):
             lines.extend(["", "**Publishing targets:**"])
             for label, t in self.publisher.targets.items():
                 lines.append(f"  - {label} ({t.target_type.value})")
+            lines.append("  setup blog publish list  — manage targets")
+        else:
+            lines.extend(["", "**No publish targets saved.**",
+                          "  setup blog publish wp://mysite.com user pass  — add one"])
 
         # Show AI status
         if self.ai_writer and self.ai_writer.providers:
@@ -1712,24 +1900,31 @@ class BlogAction(BaseAction):
                 "  ai providers  - See cloud AI providers and API key setup\n"
             )
 
-        publish_section = (
-            "\n**Publish remotely (no config needed):**\n"
-            "  publish blog to sftp://host user pass           - SFTP\n"
-            "  publish blog to sftp://host:port user pass /path\n"
-            "  publish blog to wp://mysite.com user pass       - WordPress\n"
-            "  publish blog to joomla://mysite.com user pass   - Joomla\n"
-            "  publish blog to api://mysite.com/endpoint key   - Generic API\n"
-        )
         if self.publisher and self.publisher.targets:
             targets = ", ".join(self.publisher.targets.keys())
-            publish_section += (
-                f"\n**Saved targets ({targets}):**\n"
-                "  publish blog to <target>        - Publish to specific target\n"
-                "  publish blog to all             - Publish to all targets\n"
-                "  list publish targets            - Show configured targets\n"
+            publish_section = (
+                f"\n**Saved publish targets ({targets}):**\n"
+                "  publish blog to <target>              - Publish to a specific target\n"
+                "  publish blog to all                   - Publish to all targets\n"
+                "  setup blog publish list               - Show all saved targets\n"
+                "  setup blog publish remove <label>     - Remove a target\n"
+                "\n**One-off publish (not saved):**\n"
+                "  publish blog to wp://mysite.com user pass\n"
+                "  publish blog to sftp://host user pass /path\n"
+            )
+        else:
+            publish_section = (
+                "\n**Set up a publish target (saved — no config file needed):**\n"
+                "  setup blog publish wp://mysite.com user app-password\n"
+                "  setup blog publish sftp://host user pass\n"
+                "  setup blog publish joomla://cms.example.com user token\n"
+                "  setup blog publish api://api.example.com/posts api-key\n"
+                "\n**Or publish one-off without saving:**\n"
+                "  publish blog to wp://mysite.com user pass\n"
+                "  publish blog to sftp://host:port user pass /path\n"
             )
         publish_section += (
-            "\n  After typing a publish command you'll see a preview.\n"
+            "\n  After any publish command you'll see a preview.\n"
             "  confirm / change title <new> / edit blog / cancel\n"
         )
 
