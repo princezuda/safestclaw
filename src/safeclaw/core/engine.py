@@ -249,6 +249,12 @@ class SafeClaw:
                     except Exception as e:
                         logger.error(f"NLU-translated action failed: {e}")
 
+        # ── NLU help/question answering ───────────────────────────────────────
+        if self.nlu:
+            answer = await self.nlu.answer_question(text, self.get_help())
+            if answer:
+                return answer
+
         # Track failed command for potential auto-learning
         # If the user immediately follows up with a successful command,
         # we can learn the mapping

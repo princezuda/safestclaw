@@ -209,10 +209,6 @@ class BlogAction(BaseAction):
         if self._is_ai_switch(lower):
             return self._ai_switch_provider(raw_input)
 
-        # Publishing how-to questions
-        if self._is_publish_question(lower):
-            return self._publish_how_to(lower)
-
         # Publishing commands
         if self._is_setup_publish(lower):
             return await self._setup_publish(raw_input, user_id, engine)

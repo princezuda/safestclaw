@@ -48,6 +48,16 @@ Known commands (one per line):
 {command_list}
 """
 
+_HELP_SYSTEM_PROMPT = """\
+You are the built-in assistant for SafeClaw, a privacy-first personal automation tool.
+Answer the user's question concisely using only the information in the help text below.
+Use Markdown formatting. If the answer is a setup step, show the exact command.
+If the question is not covered by the help text, say so briefly.
+
+SafeClaw help text:
+{help_text}
+"""
+
 
 class NLUInterpreter:
     """
@@ -125,3 +135,28 @@ class NLUInterpreter:
 
         logger.info(f"NLU translated {user_text!r} → {translated!r}")
         return translated
+
+    async def answer_question(self, user_text: str, help_text: str) -> str | None:
+        """
+        Ask the LLM to answer a help/how-to question about SafeClaw.
+
+        Returns the answer string, or None if unavailable.
+        """
+        if not self.ai_writer or not self.ai_writer.providers:
+            return None
+
+        system_prompt = _HELP_SYSTEM_PROMPT.format(help_text=help_text)
+
+        response = await self.ai_writer.generate(
+            prompt=user_text,
+            provider_label=self.provider_label,
+            system_prompt=system_prompt,
+            temperature=0.2,
+            max_tokens=512,
+        )
+
+        if response.error or not response.content.strip():
+            logger.debug(f"NLU question answering failed: {response.error}")
+            return None
+
+        return response.content.strip()
