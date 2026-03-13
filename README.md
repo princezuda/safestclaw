@@ -53,8 +53,7 @@ SafeClaw uses VADER, spaCy, sumy, YOLO, Whisper, Piper, and other battle-tested 
 | Cron jobs | ✅ | ✅ |
 | Webhooks | ✅ | ✅ |
 | Plugin system | ✅ | ✅ (5,700+ skills) |
-| Free-form chat | ❌ | ✅ |
-| Creative writing | ❌ | ✅ |
+| Free-form chat | ❌ | ✅ | 
 | Blog with and without  LLM  | ✅ no llm (extractive titles) with LLM, AI blogging | ❌ (always requires AI) |   
 Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 | Writing style learning | ✅ (statistical profiling) | ❌ |
