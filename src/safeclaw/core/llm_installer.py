@@ -493,7 +493,7 @@ def setup_task_provider(task: str, provider_label: str, config_path: Path) -> st
       setup ai task coding llama-coder
       setup ai task             ← show current routing
     """
-    VALID_TASKS = ("blog", "research", "coding")
+    valid_tasks = ("blog", "research", "coding")
 
     if not task:
         # Show current routing
@@ -508,7 +508,7 @@ def setup_task_provider(task: str, provider_label: str, config_path: Path) -> st
         available = [p.get("label") for p in providers if isinstance(p, dict) and p.get("label")]
 
         lines = ["**Per-task AI routing**", ""]
-        for t in VALID_TASKS:
+        for t in valid_tasks:
             assigned = task_providers.get(t, "— (uses active provider)")
             lines.append(f"  {t:<10}  {assigned}")
         lines.extend(["", f"Available providers: {', '.join(available) or 'none configured'}",
@@ -516,9 +516,9 @@ def setup_task_provider(task: str, provider_label: str, config_path: Path) -> st
         return "\n".join(lines)
 
     task = task.lower()
-    if task not in VALID_TASKS:
+    if task not in valid_tasks:
         return (
-            f"Unknown task '{task}'. Valid tasks: {', '.join(VALID_TASKS)}\n\n"
+            f"Unknown task '{task}'. Valid tasks: {', '.join(valid_tasks)}\n\n"
             "Example: setup ai task blog my-claude"
         )
 

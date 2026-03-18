@@ -228,8 +228,11 @@ async def _llm_setup_action(
 ) -> str:
     """Handle AI/integration setup commands."""
     from safeclaw.core.llm_installer import (
-        auto_setup, setup_wolfram, setup_telegram,
-        setup_telegram_allow, setup_telegram_deny,
+        auto_setup,
+        setup_telegram,
+        setup_telegram_allow,
+        setup_telegram_deny,
+        setup_wolfram,
     )
 
     raw = params.get("raw_input", "")
