@@ -36,9 +36,38 @@ _mock_fp = MagicMock()
 _mock_fp.parse = MagicMock(return_value=MagicMock(entries=[]))
 sys.modules.setdefault("feedparser", _mock_fp)
 sys.modules.setdefault("desktop_notifier", MagicMock())
-# Mock other optional dependencies that may not be installed
-for _mod in ("paramiko", "sgmllib3k", "vaderSentiment", "vaderSentiment.vaderSentiment"):
+# Mock all dependencies not installed in the CI test environment
+for _mod in (
+    "paramiko", "sgmllib3k", "vaderSentiment", "vaderSentiment.vaderSentiment",
+    "aiosqlite", "aiohttp", "aiofiles",
+    "apscheduler", "apscheduler.schedulers.asyncio",
+    "apscheduler.triggers.cron", "apscheduler.triggers.interval",
+    "apscheduler.triggers.date",
+    "yaml",
+    "typer",
+    "rich", "rich.console", "rich.markdown", "rich.live", "rich.panel", "rich.text",
+    "sumy", "sumy.parsers", "sumy.parsers.plaintext",
+    "sumy.nlp", "sumy.nlp.tokenizers", "sumy.nlp.stemmers",
+    "sumy.summarizers", "sumy.summarizers.lex_rank", "sumy.summarizers.lsa",
+    "sumy.summarizers.luhn", "sumy.summarizers.text_rank",
+    "sumy.summarizers.edmundson", "sumy.utils",
+    "nltk",
+    "icalendar",
+    "fitz",
+    "docx",
+    "PIL", "PIL.Image",
+    "fastapi", "uvicorn",
+):
     sys.modules.setdefault(_mod, MagicMock())
+
+# rapidfuzz.fuzz methods must return real ints (used in numeric comparisons)
+_mock_fuzz = MagicMock()
+_mock_fuzz.ratio = MagicMock(return_value=0)
+_mock_fuzz.partial_ratio = MagicMock(return_value=0)
+_mock_rapidfuzz = MagicMock()
+_mock_rapidfuzz.fuzz = _mock_fuzz
+sys.modules["rapidfuzz"] = _mock_rapidfuzz
+sys.modules["rapidfuzz.fuzz"] = _mock_fuzz
 
 # ── Now import SafeClaw modules ───────────────────────────────────────────────
 from safeclaw.core.parser import CommandParser
