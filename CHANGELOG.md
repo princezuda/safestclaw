@@ -2,11 +2,11 @@
 
 All notable changes to SafeClaw will be documented in this file.
 
-Every huge milestone, we add something new. We just hit **250 stars!**
+Every huge milestone, we add something new. We just hit **100 stars!**
 
 ---
 
-## [0.3.2] - 2026-03-12 — 250-Star Milestone
+## [0.3.2] - 2026-03-12 — 100-Star Milestone
 
 ### Added
 - **Real Research Sources** — Research now searches actual academic and knowledge databases
@@ -35,7 +35,7 @@ Every huge milestone, we add something new. We just hit **250 stars!**
 - Version bump to 0.4.0
 - Research action now searches arXiv + Semantic Scholar by default instead of just RSS feeds
 - Parser now auto-normalizes all input before matching
-- CLI banner updated for 250-star milestone
+- CLI banner updated for 100-star milestone
 - Config.yaml now includes wolfram_alpha API key option
 
 ---

@@ -41,17 +41,15 @@ class CLIChannel(BaseChannel):
         self.console.print()
         self.console.print(
             Panel.fit(
-                "[bold yellow]         250 STARS          [/bold yellow]\n"
-                "[bold white]We hit 250 stars on GitHub![/bold white]\n"
+                "[bold yellow]         100 STARS          [/bold yellow]\n"
+                "[bold white]We hit 100 stars on GitHub![/bold white]\n"
                 "\n"
                 "[dim]Every huge milestone, we add something new.[/dim]\n"
                 "[bold cyan]NEW:[/bold cyan] [white]Real Research + Auto LLM + Smart Learning[/white]\n"
                 "[dim]arXiv & Semantic Scholar papers, Wolfram Alpha,[/dim]\n"
                 "[dim]setup ai <your-key> instant config, auto-learning[/dim]\n"
                 "[dim]from your mistakes (typos, word-numbers, corrections).[/dim]\n"
-                "[dim]Type[/dim] [bold]help[/bold] [dim]to see all commands.[/dim]\n"
-                "\n"
-                "[dim]Next milestone:[/dim] [bold]500 stars[/bold] [yellow]:exploding_head:[/yellow]",
+                "[dim]Type[/dim] [bold]help[/bold] [dim]to see all commands.[/dim]",
                 border_style="yellow",
                 title="[bold yellow] MILESTONE [/bold yellow]",
                 subtitle="[dim]safeclaw 0.3.2[/dim]",
