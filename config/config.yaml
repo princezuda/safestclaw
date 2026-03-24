@@ -1,5 +1,12 @@
 # SafeClaw Configuration
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Writing Style — point to your .md style guide and the AI will use it
+# verbatim as the system prompt for all blog generation and rewrites.
+# ─────────────────────────────────────────────────────────────────────────────
+# writing_style:
+#   style_file: "~/my-writing-style.md"   # path to your style guide
+
 safeclaw:
   name: "SafeClaw"
   language: "en"

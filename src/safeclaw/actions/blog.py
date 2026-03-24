@@ -88,6 +88,7 @@ class BlogAction(BaseAction):
         self._initialized = False
         self._sessions_dir = self.blog_dir / ".sessions"
         self._sessions_dir.mkdir(parents=True, exist_ok=True)
+        self._style_file_prompt: str | None = None  # loaded from writing_style.style_file
 
     def _ensure_initialized(self, engine: "SafeClaw") -> None:
         """Lazy-initialize AI writer, publisher, and front page manager from config."""
@@ -111,6 +112,17 @@ class BlogAction(BaseAction):
             logger.info(
                 f"AI writer initialized with {len(self.ai_writer.providers)} provider(s)"
             )
+
+        # Load writing style from file if configured
+        style_cfg = config.get("writing_style", {})
+        style_file = style_cfg.get("style_file", "")
+        if style_file:
+            style_path = Path(style_file).expanduser()
+            if style_path.exists():
+                self._style_file_prompt = style_path.read_text(encoding="utf-8").strip()
+                logger.info(f"Loaded writing style from {style_path}")
+            else:
+                logger.warning(f"writing_style.style_file not found: {style_path}")
 
         # Initialize publisher
         if config.get("publish_targets"):
@@ -728,27 +740,31 @@ class BlogAction(BaseAction):
         if draft_path.exists():
             context = self._get_entries_text(draft_path.read_text())
 
-        # Load writing style profile and build style-aware system prompt
-        system_prompt = "You are a skilled blog writer. Write clear, engaging content."
-        if engine and hasattr(engine, "memory") and engine.memory:
-            try:
-                from safeclaw.core.writing_style import load_writing_profile
-                profile = await load_writing_profile(engine.memory, user_id)
-                if profile and profile.samples_analyzed > 0:
-                    style_instructions = profile.to_prompt_instructions()
-                    if style_instructions:
-                        system_prompt = (
-                            "You are a skilled blog writer. Write exactly as the user writes — "
-                            "match their voice, rhythm, and style precisely. "
-                            "Your goal is content that reads as 100% human-written.\n\n"
-                            "Write in this style (learned from the user's actual writing):\n"
-                            f"{style_instructions}\n\n"
-                            "Do NOT use AI clichés like 'delve into', 'tapestry', 'unleash', "
-                            "'revolutionize', 'in conclusion', 'it's worth noting', or overly "
-                            "structured intros/outros. Write like a real person, not a chatbot."
-                        )
-            except Exception as e:
-                logger.debug(f"Could not load writing style: {e}")
+        # Build style-aware system prompt
+        # Priority: style_file > learned profile > default
+        if self._style_file_prompt:
+            system_prompt = self._style_file_prompt
+        else:
+            system_prompt = "You are a skilled blog writer. Write clear, engaging content."
+            if engine and hasattr(engine, "memory") and engine.memory:
+                try:
+                    from safeclaw.core.writing_style import load_writing_profile
+                    profile = await load_writing_profile(engine.memory, user_id)
+                    if profile and profile.samples_analyzed > 0:
+                        style_instructions = profile.to_prompt_instructions()
+                        if style_instructions:
+                            system_prompt = (
+                                "You are a skilled blog writer. Write exactly as the user writes — "
+                                "match their voice, rhythm, and style precisely. "
+                                "Your goal is content that reads as 100% human-written.\n\n"
+                                "Write in this style (learned from the user's actual writing):\n"
+                                f"{style_instructions}\n\n"
+                                "Do NOT use AI clichés like 'delve into', 'tapestry', 'unleash', "
+                                "'revolutionize', 'in conclusion', 'it's worth noting', or overly "
+                                "structured intros/outros. Write like a real person, not a chatbot."
+                            )
+                except Exception as e:
+                    logger.debug(f"Could not load writing style: {e}")
 
         response = await self.ai_writer.generate(
             self.ai_writer.templates.render("generate", topic=topic, context=context),
@@ -783,7 +799,7 @@ class BlogAction(BaseAction):
             f"  'publish blog to <target>' - Publish to WordPress/Joomla/SFTP"
         )
 
-    async def _ai_rewrite(self, raw_input: str, user_id: str) -> str:
+    async def _ai_rewrite(self, raw_input: str, user_id: str, engine: "SafeClaw | None" = None) -> str:
         """Rewrite blog draft with AI."""
         if not self.ai_writer or not self.ai_writer.providers:
             return "No AI providers configured. Use 'ai options' for setup info."
@@ -796,7 +812,29 @@ class BlogAction(BaseAction):
         if not content.strip():
             return "Blog draft is empty."
 
-        response = await self.ai_writer.rewrite_blog(content)
+        if self._style_file_prompt:
+            system_prompt = self._style_file_prompt
+        else:
+            system_prompt = "You are a skilled blog writer. Rewrite the content to be more engaging."
+            if engine and hasattr(engine, "memory") and engine.memory:
+                try:
+                    from safeclaw.core.writing_style import load_writing_profile
+                    profile = await load_writing_profile(engine.memory, user_id)
+                    if profile and profile.samples_analyzed > 0:
+                        style_instructions = profile.to_prompt_instructions()
+                        if style_instructions:
+                            system_prompt = (
+                                "Rewrite the following content to exactly match this writing style:\n"
+                                f"{style_instructions}\n\n"
+                                "Do NOT use AI clichés. Write like a real person."
+                            )
+                except Exception as e:
+                    logger.debug(f"Could not load writing style: {e}")
+
+        response = await self.ai_writer.generate(
+            self.ai_writer.templates.render("rewrite", content=content),
+            system_prompt=system_prompt,
+        )
 
         if response.error:
             return f"AI rewrite failed: {response.error}"
