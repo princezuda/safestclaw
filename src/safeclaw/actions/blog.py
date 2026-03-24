@@ -225,6 +225,10 @@ class BlogAction(BaseAction):
         if self._is_setup_style(lower):
             return self._setup_style(raw_input, engine)
 
+        # Topics setup (AI-write mode)
+        if self._is_setup_topics(lower):
+            return self._setup_topics(raw_input, engine)
+
         # Daemon/cron setup
         if self._is_setup_daemon(lower):
             return self._setup_daemon(raw_input, engine)
@@ -703,6 +707,16 @@ class BlogAction(BaseAction):
             r"(install|enable)\s+(blog\s+)?(service|daemon|cron)|"
             r"blog\s+(run\s+in\s+background|keep\s+running|always\s+on)|"
             r"publish\s+when\s+(safeclaw\s+)?(is\s+)?off",
+            text,
+        ))
+
+    def _is_setup_topics(self, text: str) -> bool:
+        return bool(re.search(
+            r"setup\s+(blog\s+)?topics?|"
+            r"(add|set|configure|list|show|clear)\s+(blog\s+)?topics?|"
+            r"blog\s+(ai\s+)?topics?|"
+            r"topics?\s+(for\s+blog|to\s+write\s+about)|"
+            r"write\s+about\s+topics?",
             text,
         ))
 
@@ -1309,6 +1323,186 @@ class BlogAction(BaseAction):
             )
         except Exception as e:
             return f"Error saving config: {e}"
+
+    # ── Topics setup (AI-write mode) ──────────────────────────────────────────
+
+    def _setup_topics(self, raw_input: str, engine: "SafeClaw") -> str:
+        """
+        Configure the AI-write topic rotation for scheduled blog posts.
+
+        Usage:
+          setup blog topics "Python tips,AI news,Cybersecurity"
+          setup blog topics add "New topic"
+          setup blog topics list
+          setup blog topics clear
+          setup blog topics tone conversational
+          setup blog topics words 800
+          setup blog topics schedule daily 9am        ← also installs cron
+
+        When ai_mode is enabled in an auto_blogs schedule, safeclaw cycles
+        through these topics in order, writing a fresh AI post each time.
+        If no post is ready to go, this is the fallback.
+        """
+        lower = raw_input.lower()
+
+        # List current topics
+        if re.search(r'\b(list|show|view|current)\b', lower):
+            return self._show_topics(engine)
+
+        # Clear all topics
+        if re.search(r'\b(clear|reset|remove\s+all)\b', lower):
+            return self._clear_topics(engine)
+
+        # Tone setting: "topics tone conversational"
+        tone_m = re.search(r'\btone\s+(\w+)', lower)
+        if tone_m:
+            return self._set_topic_option(engine, "ai_tone", tone_m.group(1))
+
+        # Word count: "topics words 800" / "topics word count 800"
+        words_m = re.search(r'\bwords?\s+(?:count\s+)?(\d+)', lower)
+        if words_m:
+            return self._set_topic_option(engine, "ai_word_count", int(words_m.group(1)))
+
+        # Add a single topic: "topics add Python tips"
+        add_m = re.search(r'\badd\s+(.+)', raw_input, re.IGNORECASE)
+        if add_m:
+            new_topic = add_m.group(1).strip().strip('"\'')
+            return self._add_topic(engine, new_topic)
+
+        # Set topics from comma-separated list (possibly quoted)
+        # e.g. setup blog topics "Python tips,AI news,Cybersecurity"
+        # Strip the command prefix and extract the topic list
+        # Remove leading command words
+        cleaned = re.sub(
+            r'^.*?topics?\s+', '', raw_input, flags=re.IGNORECASE, count=1
+        ).strip().strip('"\'')
+
+        if not cleaned:
+            return self._topics_help()
+
+        topics = [t.strip() for t in cleaned.split(",") if t.strip()]
+        if not topics:
+            return self._topics_help()
+
+        return self._save_topics(engine, topics, replace=True)
+
+    def _show_topics(self, engine: "SafeClaw") -> str:
+        auto_blogs = engine.config.get("auto_blogs", [])
+        # Find the first ai_mode enabled schedule, or any with topics
+        for ab in auto_blogs:
+            if ab.get("topics"):
+                topics = ab.get("topics", [])
+                tone = ab.get("ai_tone", "")
+                words = ab.get("ai_word_count", 0)
+                enabled = ab.get("ai_mode", False)
+                lines = [
+                    f"Schedule: {ab['name']}",
+                    f"AI mode:  {'enabled' if enabled else 'disabled (set ai_mode: true to enable)'}",
+                    f"Topics ({len(topics)}):",
+                ]
+                for i, t in enumerate(topics, 1):
+                    lines.append(f"  {i}. {t}")
+                if tone:
+                    lines.append(f"Tone: {tone}")
+                if words:
+                    lines.append(f"Target words: {words}")
+                return "\n".join(lines)
+        return (
+            "No topics configured yet.\n\n"
+            "Add topics:\n"
+            '  setup blog topics "Python tips,AI news,Cybersecurity"\n'
+            "  setup blog topics add \"My topic\"\n\n"
+            "Safeclaw will cycle through them in order, writing a fresh AI\n"
+            "post each scheduled run when no draft is ready."
+        )
+
+    def _clear_topics(self, engine: "SafeClaw") -> str:
+        auto_blogs = engine.config.get("auto_blogs", [])
+        changed = 0
+        for ab in auto_blogs:
+            if ab.get("topics"):
+                ab["topics"] = []
+                ab["ai_mode"] = False
+                changed += 1
+        if changed:
+            self._save_config(engine)
+            return f"Cleared topics from {changed} schedule(s). AI mode disabled."
+        return "No topics to clear."
+
+    def _add_topic(self, engine: "SafeClaw", topic: str) -> str:
+        auto_blogs = engine.config.get("auto_blogs", [])
+        if not auto_blogs:
+            # Create a default schedule entry
+            auto_blogs = [{"name": "default", "cron_expr": "0 9 * * *", "enabled": True, "topics": []}]
+            engine.config["auto_blogs"] = auto_blogs
+        # Add to first schedule (or the ai_mode one)
+        target = next((ab for ab in auto_blogs if ab.get("ai_mode")), auto_blogs[0])
+        topics = target.get("topics", [])
+        if topic in topics:
+            return f"Topic already in list: {topic}"
+        topics.append(topic)
+        target["topics"] = topics
+        target["ai_mode"] = True
+        self._save_config(engine)
+        return f"Added topic: {topic}\nTotal topics: {len(topics)}\nUse: setup blog topics list"
+
+    def _save_topics(self, engine: "SafeClaw", topics: list[str], replace: bool = True) -> str:
+        auto_blogs = engine.config.get("auto_blogs", [])
+        if not auto_blogs:
+            auto_blogs = [{"name": "default", "cron_expr": "0 9 * * *", "enabled": True}]
+            engine.config["auto_blogs"] = auto_blogs
+        target = next((ab for ab in auto_blogs if ab.get("ai_mode")), auto_blogs[0])
+        if replace:
+            target["topics"] = topics
+        else:
+            existing = target.get("topics", [])
+            target["topics"] = existing + [t for t in topics if t not in existing]
+        target["ai_mode"] = True
+        self._save_config(engine)
+        topic_list = "\n".join(f"  {i}. {t}" for i, t in enumerate(topics, 1))
+        return (
+            f"Topics saved ({len(topics)} total). AI-write mode enabled.\n\n"
+            f"{topic_list}\n\n"
+            "Safeclaw will cycle through these in order on each scheduled run.\n"
+            "If no draft is queued, the next topic is written automatically.\n\n"
+            "Options:\n"
+            "  setup blog topics tone conversational   — set writing tone\n"
+            "  setup blog topics words 800             — set target length\n"
+            "  setup blog daemon daily 9am             — schedule cron job\n"
+            "  setup blog style ~/my-style.md          — apply style guide"
+        )
+
+    def _set_topic_option(self, engine: "SafeClaw", key: str, value: object) -> str:
+        auto_blogs = engine.config.get("auto_blogs", [])
+        if not auto_blogs:
+            return "No auto_blogs schedule configured. Add topics first."
+        target = next((ab for ab in auto_blogs if ab.get("ai_mode")), auto_blogs[0])
+        target[key] = value
+        self._save_config(engine)
+        return f"Set {key} = {value}"
+
+    def _save_config(self, engine: "SafeClaw") -> None:
+        """Persist engine.config back to config.yaml."""
+        cfg_path = Path("config/config.yaml")
+        with open(cfg_path, "w") as f:
+            yaml.dump(engine.config, f, default_flow_style=False, sort_keys=False)
+
+    def _topics_help(self) -> str:
+        return (
+            "Set the topics safeclaw will write about on schedule.\n\n"
+            "Usage:\n"
+            '  setup blog topics "Python tips,AI news,Cybersecurity"\n'
+            "  setup blog topics add \"My new topic\"\n"
+            "  setup blog topics list\n"
+            "  setup blog topics clear\n"
+            "  setup blog topics tone conversational\n"
+            "  setup blog topics words 800\n\n"
+            "Topics cycle in order. Each scheduled run picks the next topic\n"
+            "and writes a complete post using your configured AI provider.\n\n"
+            "Pair with:\n"
+            "  setup blog style ~/style.md    — writing style guide\n"
+            "  setup blog daemon daily 9am    — system cron (runs without safeclaw)"
+        )
 
     # ── Daemon / system cron setup ────────────────────────────────────────────
 

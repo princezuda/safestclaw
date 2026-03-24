@@ -1,22 +1,29 @@
 """
-SafeClaw Blog Scheduler - Cron-based auto-blogging without LLM.
+SafeClaw Blog Scheduler - Cron-based auto-blogging.
 
-Automatically publishes blog posts on a schedule using only
-deterministic, non-AI content generation:
+Two modes:
 
+RSS/crawl mode (default, no LLM):
 - Fetches content from configured RSS feeds
 - Crawls specified source URLs
 - Summarizes with sumy (extractive, no AI)
 - Formats into blog post templates
 - Publishes to configured targets
 
-No LLM required. Runs on cron schedule via APScheduler.
+AI-write mode (ai_mode: true):
+- Cycles through a list of topics you provide
+- Generates a full blog post via your configured AI provider
+- Applies your writing style file if configured
+- Publishes or saves as draft on schedule
+- Falls back to RSS mode if AI is unavailable
 """
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from safeclaw.core.crawler import Crawler
@@ -55,6 +62,14 @@ class AutoBlogConfig:
     publish_target: str = ""  # Specific target label, or empty for local
     auto_publish: bool = False  # Publish immediately or save as draft
 
+    # AI-write mode
+    ai_mode: bool = False           # If True, generate from topics using AI
+    topics: list[str] = field(default_factory=list)  # Topic list to cycle through
+    ai_tone: str = ""               # e.g. "informative", "conversational", "technical"
+    ai_word_count: int = 0          # Target length (0 = AI decides)
+    ai_provider: str = ""           # Specific AI provider label (or "" for active)
+    ai_fallback_rss: bool = True    # Fall back to RSS mode if AI unavailable
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dict."""
         return {
@@ -72,6 +87,12 @@ class AutoBlogConfig:
             "post_template": self.post_template,
             "publish_target": self.publish_target,
             "auto_publish": self.auto_publish,
+            "ai_mode": self.ai_mode,
+            "topics": self.topics,
+            "ai_tone": self.ai_tone,
+            "ai_word_count": self.ai_word_count,
+            "ai_provider": self.ai_provider,
+            "ai_fallback_rss": self.ai_fallback_rss,
         }
 
     @classmethod
@@ -92,6 +113,12 @@ class AutoBlogConfig:
             post_template=data.get("post_template", "digest"),
             publish_target=data.get("publish_target", ""),
             auto_publish=data.get("auto_publish", False),
+            ai_mode=data.get("ai_mode", False),
+            topics=data.get("topics", []),
+            ai_tone=data.get("ai_tone", ""),
+            ai_word_count=data.get("ai_word_count", 0),
+            ai_provider=data.get("ai_provider", ""),
+            ai_fallback_rss=data.get("ai_fallback_rss", True),
         )
 
 
@@ -195,24 +222,37 @@ class BlogScheduler:
 
     async def _execute_auto_blog(self, config: AutoBlogConfig) -> None:
         """
-        Execute an auto-blog job. Fetches content, summarizes, formats, publishes.
+        Execute an auto-blog job.
 
-        This is the core cron callback - no LLM involved.
+        AI mode: generate a post from the next topic in the rotation list.
+        RSS mode: fetch feeds/URLs, summarize, format from template.
         """
         logger.info(f"Executing auto-blog: {config.name}")
 
         try:
-            # 1. Gather content from all sources
-            content_items = await self._gather_content(config)
+            if config.ai_mode and config.topics:
+                title, body = await self._generate_ai_post(config)
+                if title and body:
+                    if config.auto_publish and config.publish_target:
+                        await self._publish_post(config, title, body)
+                    else:
+                        await self._save_draft(config, title, body)
+                    logger.info(f"Auto-blog (AI) '{config.name}' completed: {title}")
+                    return
+                # AI failed — fall back to RSS if configured
+                if not config.ai_fallback_rss:
+                    logger.warning(f"Auto-blog '{config.name}': AI failed, fallback disabled")
+                    return
+                logger.warning(f"Auto-blog '{config.name}': AI failed, falling back to RSS mode")
 
+            # RSS/crawl mode
+            content_items = await self._gather_content(config)
             if not content_items:
                 logger.warning(f"Auto-blog '{config.name}': no content gathered")
                 return
 
-            # 2. Format into blog post
             title, body = self._format_post(config, content_items)
 
-            # 3. Save or publish
             if config.auto_publish and config.publish_target:
                 await self._publish_post(config, title, body)
             else:
@@ -222,6 +262,98 @@ class BlogScheduler:
 
         except Exception as e:
             logger.error(f"Auto-blog '{config.name}' failed: {e}")
+
+    # ── AI-write mode ─────────────────────────────────────────────────────────
+
+    def _get_topic_state_path(self, config_name: str) -> Path:
+        """Return path to the per-schedule topic rotation state file."""
+        state_dir = Path.home() / ".safeclaw" / "blog-state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        return state_dir / f"{config_name}-topic-state.json"
+
+    def _next_topic(self, config: AutoBlogConfig) -> str:
+        """Return the next topic in the rotation and advance the index."""
+        if not config.topics:
+            return ""
+        state_path = self._get_topic_state_path(config.name)
+        state: dict = {}
+        if state_path.exists():
+            try:
+                state = json.loads(state_path.read_text())
+            except Exception:
+                state = {}
+        idx = state.get("topic_index", 0) % len(config.topics)
+        topic = config.topics[idx]
+        state["topic_index"] = (idx + 1) % len(config.topics)
+        state["last_topic"] = topic
+        state["last_run"] = datetime.now().isoformat()
+        state_path.write_text(json.dumps(state, indent=2))
+        return topic
+
+    async def _generate_ai_post(
+        self, config: AutoBlogConfig
+    ) -> tuple[str, str]:
+        """Use AIWriter to generate a blog post from the next topic."""
+        try:
+            from safeclaw.core.ai_writer import load_ai_writer_from_yaml
+        except ImportError:
+            logger.error("AI writer not available")
+            return "", ""
+
+        ai_writer = load_ai_writer_from_yaml(self.engine.config)
+        if not ai_writer or not ai_writer.providers:
+            logger.warning("No AI providers configured for auto-blog")
+            return "", ""
+
+        topic = self._next_topic(config)
+        if not topic:
+            return "", ""
+
+        # Build context additions (tone, length)
+        context_parts: list[str] = []
+        if config.ai_tone:
+            context_parts.append(f"Tone: {config.ai_tone}.")
+        if config.ai_word_count:
+            context_parts.append(f"Target length: approximately {config.ai_word_count} words.")
+
+        # Apply style file if configured
+        style_file = (
+            self.engine.config.get("writing_style", {}).get("style_file", "")
+        )
+        if style_file:
+            sp = Path(style_file).expanduser()
+            if sp.exists():
+                context_parts.append(
+                    f"\nWriting style guide:\n{sp.read_text(encoding='utf-8').strip()}"
+                )
+
+        context = "\n".join(context_parts)
+        provider = config.ai_provider or None
+
+        logger.info(f"AI auto-blog: generating post on topic '{topic}'")
+        response = await ai_writer.generate_blog(
+            topic=topic,
+            context=context,
+            provider_label=provider,
+        )
+
+        if response.error:
+            logger.error(f"AI blog generation failed: {response.error}")
+            return "", ""
+
+        body = response.content.strip()
+        if not body:
+            return "", ""
+
+        # Extract title from first heading, or derive from topic
+        title = topic
+        first_line = body.splitlines()[0].strip()
+        if first_line.startswith("#"):
+            title = first_line.lstrip("#").strip()
+            # Remove the heading line from body so it's not duplicated
+            body = "\n".join(body.splitlines()[1:]).strip()
+
+        return title, body
 
     async def _gather_content(
         self,
