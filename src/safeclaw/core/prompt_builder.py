@@ -34,7 +34,7 @@ SYSTEM_FLOW_DIAGRAM = """
 ║  │  (any channel│     │ Parser       │     │  (blog/research/code/...)    │  ║
 ║  │  CLI/TG/Web) │     │ (fuzzy match)│     └──────────┬───────────────────┘  ║
 ║  └─────────────┘     └──────────────┘                │                       ║
-║                                                       ▼                      ║ 
+║                                                       ▼                      ║
 ║  ┌────────────────────────────────────────────────────────────────────────┐  ║
 ║  │                    Per-Task LLM Router                                 │  ║
 ║  │  ┌──────────┐  ┌───────────┐  ┌──────────┐  ┌─────────────────────┐  │    ║
@@ -42,10 +42,10 @@ SYSTEM_FLOW_DIAGRAM = """
 ║  │  │ LLM      │  │ LLM       │  │ LLM      │  │  LLM                │  │    ║
 ║  │  └─────┬────┘  └─────┬─────┘  └────┬─────┘  └──────────┬──────────┘  │    ║
 ║  └────────┼─────────────┼─────────────┼────────────────────┼─────────────┘   ║
-║           │             │             │                    │                 ║ 
-║           ▼             ▼             ▼                    ▼                 ║ 
+║           │             │             │                    │                 ║
+║           ▼             ▼             ▼                    ▼                 ║
 ║  ┌─────────────────────────────────────────────────────────────────────┐     ║
-║  │              Dynamic Prompt Builder (this module)                    │    ║ 
+║  │              Dynamic Prompt Builder (this module)                    │    ║
 ║  │  ┌───────────────┐ ┌────────────┐ ┌──────────┐ ┌───────────────┐  │       ║
 ║  │  │Writing Profile│ │  Context   │ │   User   │ │  Task-Specific│  │       ║
 ║  │  │(fuzzy learned)│ │ (time/topic│ │  Prefs   │ │  Instructions │  │       ║
@@ -67,7 +67,7 @@ SYSTEM_FLOW_DIAGRAM = """
 ║  ┌─────────────────────────────────────────────────────────────────────┐     ║
 ║  │                        Research Pipeline                            │     ║
 ║  │                                                                     │     ║
-║  │  Web Search ──▶ Sumy Summarize ──▶ Source Selection ──▶ LLM Deep   │    ║ 
+║  │  Web Search ──▶ Sumy Summarize ──▶ Source Selection ──▶ LLM Deep   │    ║
 ║  │  (non-LLM)     (non-LLM)          (user picks)         Research    │      ║
 ║  └─────────────────────────────────────────────────────────────────────┘     ║
 ║                               │                                              ║
@@ -75,7 +75,7 @@ SYSTEM_FLOW_DIAGRAM = """
 ║  ┌─────────────────────────────────────────────────────────────────────┐     ║
 ║  │                     Cron Auto-Blog Pipeline                         │     ║
 ║  │                                                                     │     ║
-║  │  Schedule ──▶ Fetch Sources ──▶ Sumy Extract ──▶ Format ──▶ Publish │   ║  
+║  │  Schedule ──▶ Fetch Sources ──▶ Sumy Extract ──▶ Format ──▶ Publish │   ║
 ║  │  (cron)      (RSS/crawl)       (no LLM)        (template)  (target)│      ║
 ║  └─────────────────────────────────────────────────────────────────────┘     ║
 ║                               │                                              ║
