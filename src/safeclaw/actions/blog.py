@@ -195,7 +195,7 @@ class BlogAction(BaseAction):
         if self._is_ai_generate(lower):
             return await self._ai_generate(raw_input, user_id, engine)
         if self._is_ai_rewrite(lower):
-            return await self._ai_rewrite(raw_input, user_id)
+            return await self._ai_rewrite(raw_input, user_id, engine)
         if self._is_ai_expand(lower):
             return await self._ai_expand(raw_input, user_id)
         if self._is_ai_headlines(lower):
@@ -728,7 +728,32 @@ class BlogAction(BaseAction):
         if draft_path.exists():
             context = self._get_entries_text(draft_path.read_text())
 
-        response = await self.ai_writer.generate_blog(topic, context)
+        # Load writing style profile and build style-aware system prompt
+        system_prompt = "You are a skilled blog writer. Write clear, engaging content."
+        if engine and hasattr(engine, "memory") and engine.memory:
+            try:
+                from safeclaw.core.writing_style import load_writing_profile
+                profile = await load_writing_profile(engine.memory, user_id)
+                if profile and profile.samples_analyzed > 0:
+                    style_instructions = profile.to_prompt_instructions()
+                    if style_instructions:
+                        system_prompt = (
+                            "You are a skilled blog writer. Write exactly as the user writes — "
+                            "match their voice, rhythm, and style precisely. "
+                            "Your goal is content that reads as 100% human-written.\n\n"
+                            "Write in this style (learned from the user's actual writing):\n"
+                            f"{style_instructions}\n\n"
+                            "Do NOT use AI clichés like 'delve into', 'tapestry', 'unleash', "
+                            "'revolutionize', 'in conclusion', 'it's worth noting', or overly "
+                            "structured intros/outros. Write like a real person, not a chatbot."
+                        )
+            except Exception as e:
+                logger.debug(f"Could not load writing style: {e}")
+
+        response = await self.ai_writer.generate(
+            self.ai_writer.templates.render("generate", topic=topic, context=context),
+            system_prompt=system_prompt,
+        )
 
         if response.error:
             return f"AI generation failed: {response.error}"
