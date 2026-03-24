@@ -221,6 +221,14 @@ class BlogAction(BaseAction):
         if self._is_ai_switch(lower):
             return self._ai_switch_provider(raw_input)
 
+        # Style setup
+        if self._is_setup_style(lower):
+            return self._setup_style(raw_input, engine)
+
+        # Daemon/cron setup
+        if self._is_setup_daemon(lower):
+            return self._setup_daemon(raw_input, engine)
+
         # Publishing commands
         if self._is_setup_publish(lower):
             return await self._setup_publish(raw_input, user_id, engine)
@@ -678,6 +686,23 @@ class BlogAction(BaseAction):
             r"setup\s+(blog\s+)?publish|"
             r"setup\s+publish\s+blog|"
             r"(save|add|store)\s+(blog\s+)?publish\s+target",
+            text,
+        ))
+
+    def _is_setup_style(self, text: str) -> bool:
+        return bool(re.search(
+            r"setup\s+(blog\s+)?style|"
+            r"(set|load|use)\s+(writing\s+)?style\s+(file|guide|from)|"
+            r"style\s+file|writing\s+style\s+setup",
+            text,
+        ))
+
+    def _is_setup_daemon(self, text: str) -> bool:
+        return bool(re.search(
+            r"setup\s+(blog\s+)?(daemon|cron|service|schedule|autostart|background)|"
+            r"(install|enable)\s+(blog\s+)?(service|daemon|cron)|"
+            r"blog\s+(run\s+in\s+background|keep\s+running|always\s+on)|"
+            r"publish\s+when\s+(safeclaw\s+)?(is\s+)?off",
             text,
         ))
 
@@ -1200,6 +1225,303 @@ class BlogAction(BaseAction):
             return f"Removed publish target **{label}**."
         except Exception as e:
             return f"Error removing target: {e}"
+
+    # ── Style file setup ─────────────────────────────────────────────────────
+
+    def _setup_style(self, raw_input: str, engine: "SafeClaw") -> str:
+        """
+        Configure the writing style file.
+
+        Usage:
+          setup blog style ~/my-style.md
+          setup blog style show
+          setup blog style clear
+        """
+        # Extract path from command
+        lower = raw_input.lower()
+
+        if re.search(r'\b(show|status|current|view)\b', lower):
+            style_cfg = engine.config.get("writing_style", {})
+            path = style_cfg.get("style_file", "")
+            if path:
+                p = Path(path).expanduser()
+                exists = "✓ file exists" if p.exists() else "✗ file not found"
+                return f"Writing style file: {path}\n{exists}"
+            return "No style file configured. Use: setup blog style ~/my-style.md"
+
+        if re.search(r'\b(clear|remove|reset|none)\b', lower):
+            try:
+                cfg = engine.config
+                if "writing_style" in cfg:
+                    cfg["writing_style"].pop("style_file", None)
+                    if not cfg["writing_style"]:
+                        del cfg["writing_style"]
+                cfg_path = Path("config/config.yaml")
+                with open(cfg_path, "w") as f:
+                    yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+                self._style_file_prompt = None
+                return "Writing style file cleared. AI will use the learned profile instead."
+            except Exception as e:
+                return f"Error: {e}"
+
+        # Extract file path (anything after "style ")
+        m = re.search(r'style\s+(\S+)', raw_input, re.IGNORECASE)
+        if not m:
+            return (
+                "Usage:\n"
+                "  setup blog style ~/my-style.md     — set style file\n"
+                "  setup blog style show               — show current setting\n"
+                "  setup blog style clear              — remove style file\n\n"
+                "Your .md file contents will be used verbatim as the AI system prompt\n"
+                "for all blog generation and rewrites."
+            )
+
+        file_path = m.group(1)
+        resolved = Path(file_path).expanduser()
+
+        if not resolved.exists():
+            return (
+                f"File not found: {resolved}\n\n"
+                "Make sure the path is correct. The file will be read each time\n"
+                "safeclaw starts, so you can edit it any time."
+            )
+
+        # Save to config.yaml
+        try:
+            cfg = engine.config
+            if "writing_style" not in cfg:
+                cfg["writing_style"] = {}
+            cfg["writing_style"]["style_file"] = str(resolved)
+            cfg_path = Path("config/config.yaml")
+            with open(cfg_path, "w") as f:
+                yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+
+            # Load immediately
+            self._style_file_prompt = resolved.read_text(encoding="utf-8").strip()
+            preview = self._style_file_prompt[:200]
+            if len(self._style_file_prompt) > 200:
+                preview += "..."
+
+            return (
+                f"Writing style file set: {resolved}\n\n"
+                f"Preview:\n{preview}\n\n"
+                "This style will be used for all AI blog generation and rewrites."
+            )
+        except Exception as e:
+            return f"Error saving config: {e}"
+
+    # ── Daemon / system cron setup ────────────────────────────────────────────
+
+    def _setup_daemon(self, raw_input: str, engine: "SafeClaw") -> str:
+        """
+        Install safeclaw blog publishing as a system cron job so it runs
+        even when safeclaw is not open.
+
+        Usage:
+          setup blog daemon                     — show instructions
+          setup blog daemon daily 9am           — publish daily at 9am
+          setup blog daemon daily 9am my-server — daily at 9am to target
+          setup blog daemon weekly monday 9am   — every Monday at 9am
+          setup blog daemon remove              — remove the cron job
+          setup blog daemon status              — show installed jobs
+        """
+        import shutil
+        import sys
+
+        lower = raw_input.lower()
+
+        python_exe = sys.executable
+        safeclaw_cmd = f"{python_exe} -m safeclaw"
+        # Try to find the config path
+        cfg_path = Path("config/config.yaml").resolve()
+
+        # Status
+        if re.search(r'\b(status|show|list)\b', lower):
+            return self._daemon_status()
+
+        # Remove
+        if re.search(r'\b(remove|delete|uninstall|disable)\b', lower):
+            return self._daemon_remove()
+
+        # Parse schedule from command
+        # Patterns: "daily 9am", "daily 9:30", "weekly monday 9am", "every day at 9"
+        hour, minute, day_of_week = self._parse_schedule_from_input(raw_input)
+        if hour is None:
+            return self._daemon_help(safeclaw_cmd)
+
+        # Extract publish target if specified (last word if not a time)
+        target = ""
+        words = raw_input.split()
+        last = words[-1].lower() if words else ""
+        if last not in ("am", "pm") and not re.match(r'^\d', last) and re.search(r'\b(daily|weekly|every)\b', lower):
+            # Check if last word looks like a target name (not a time keyword)
+            if last not in ("daily", "weekly", "monday", "tuesday", "wednesday",
+                            "thursday", "friday", "saturday", "sunday", "daemon",
+                            "cron", "service", "schedule", "background"):
+                target = last
+
+        # Build cron expression
+        if day_of_week is not None:
+            cron_expr = f"{minute} {hour} * * {day_of_week}"
+        else:
+            cron_expr = f"{minute} {hour} * * *"
+
+        # Build the one-shot command
+        target_arg = f" --target {target}" if target else ""
+        job_cmd = (
+            f"cd {Path.cwd().resolve()} && "
+            f"{safeclaw_cmd} blog run{target_arg} >> ~/.safeclaw/blog-cron.log 2>&1"
+        )
+
+        # Write to crontab
+        result = self._write_crontab_entry(cron_expr, job_cmd)
+        if not result:
+            return (
+                "Could not write to crontab automatically.\n\n"
+                "Add this line manually with `crontab -e`:\n\n"
+                f"  {cron_expr} {job_cmd}"
+            )
+
+        schedule_desc = self._describe_schedule(cron_expr)
+        return (
+            f"Blog cron job installed!\n\n"
+            f"Schedule: {schedule_desc} ({cron_expr})\n"
+            f"Target:   {target or 'all enabled targets'}\n"
+            f"Log:      ~/.safeclaw/blog-cron.log\n\n"
+            f"Safeclaw does NOT need to be running — the system cron will\n"
+            f"start a one-shot publish process at the scheduled time.\n\n"
+            f"Manage:\n"
+            f"  setup blog daemon status   — show installed jobs\n"
+            f"  setup blog daemon remove   — uninstall\n"
+            f"  crontab -l                 — see all your cron jobs"
+        )
+
+    def _parse_schedule_from_input(self, text: str) -> tuple[int | None, int, int | None]:
+        """Parse hour, minute, day_of_week from natural language. Returns (hour, minute, dow)."""
+        text = text.lower()
+
+        # Day of week
+        dow_map = {
+            "monday": 1, "mon": 1,
+            "tuesday": 2, "tue": 2,
+            "wednesday": 3, "wed": 3,
+            "thursday": 4, "thu": 4,
+            "friday": 5, "fri": 5,
+            "saturday": 6, "sat": 6,
+            "sunday": 0, "sun": 0,
+        }
+        day_of_week = None
+        for name, num in dow_map.items():
+            if name in text:
+                day_of_week = num
+                break
+
+        # Time parsing: "9am", "9:30am", "9:30", "9", "14:00"
+        m = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', text)
+        if not m:
+            return None, 0, None
+
+        hour = int(m.group(1))
+        minute = int(m.group(2)) if m.group(2) else 0
+        meridiem = m.group(3)
+
+        if meridiem == "pm" and hour < 12:
+            hour += 12
+        elif meridiem == "am" and hour == 12:
+            hour = 0
+
+        return hour, minute, day_of_week
+
+    def _describe_schedule(self, cron_expr: str) -> str:
+        """Human-readable description of a cron expression."""
+        parts = cron_expr.split()
+        if len(parts) != 5:
+            return cron_expr
+        minute, hour, _, _, dow = parts
+        days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        h = int(hour)
+        m = int(minute)
+        time_str = f"{h % 12 or 12}:{m:02d} {'AM' if h < 12 else 'PM'}"
+        if dow == "*":
+            return f"Every day at {time_str}"
+        return f"Every {days[int(dow)]} at {time_str}"
+
+    def _write_crontab_entry(self, cron_expr: str, cmd: str) -> bool:
+        """Write a safeclaw cron entry to the user's crontab."""
+        import subprocess
+        marker = "# safeclaw-blog"
+        new_line = f"{cron_expr} {cmd} {marker}"
+        try:
+            # Read existing crontab
+            result = subprocess.run(
+                ["crontab", "-l"], capture_output=True, text=True,
+            )
+            existing = result.stdout if result.returncode == 0 else ""
+
+            # Remove any existing safeclaw-blog lines
+            lines = [l for l in existing.splitlines() if marker not in l]
+            lines.append(new_line)
+
+            # Write back
+            new_crontab = "\n".join(lines) + "\n"
+            proc = subprocess.run(
+                ["crontab", "-"], input=new_crontab, text=True, capture_output=True,
+            )
+            return proc.returncode == 0
+        except Exception:
+            return False
+
+    def _daemon_remove(self) -> str:
+        """Remove safeclaw blog cron entries."""
+        import subprocess
+        marker = "# safeclaw-blog"
+        try:
+            result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+            existing = result.stdout if result.returncode == 0 else ""
+            lines = [l for l in existing.splitlines() if marker not in l]
+            new_crontab = "\n".join(lines) + "\n"
+            subprocess.run(["crontab", "-"], input=new_crontab, text=True, capture_output=True)
+            return "Blog cron job removed. Run `crontab -l` to verify."
+        except Exception as e:
+            return f"Error removing cron entry: {e}"
+
+    def _daemon_status(self) -> str:
+        """Show installed safeclaw blog cron jobs."""
+        import subprocess
+        marker = "# safeclaw-blog"
+        try:
+            result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+            if result.returncode != 0:
+                return "No crontab installed yet."
+            jobs = [l for l in result.stdout.splitlines() if marker in l]
+            if not jobs:
+                return (
+                    "No blog cron jobs installed.\n"
+                    "Use: setup blog daemon daily 9am"
+                )
+            lines = ["Installed blog cron jobs:", ""]
+            for job in jobs:
+                parts = job.split()
+                if len(parts) >= 5:
+                    expr = " ".join(parts[:5])
+                    lines.append(f"  {self._describe_schedule(expr)}  ({expr})")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Error reading crontab: {e}"
+
+    def _daemon_help(self, cmd: str) -> str:
+        return (
+            "Set up blog publishing as a system cron job (runs even when safeclaw is off).\n\n"
+            "Usage:\n"
+            "  setup blog daemon daily 9am              — every day at 9am\n"
+            "  setup blog daemon daily 9am my-server    — daily to a specific target\n"
+            "  setup blog daemon weekly monday 9am      — every Monday at 9am\n"
+            "  setup blog daemon status                 — show installed jobs\n"
+            "  setup blog daemon remove                 — uninstall\n\n"
+            "The cron will run:\n"
+            f"  {cmd} blog run\n\n"
+            "Make sure auto_blogs is configured in config/config.yaml first."
+        )
 
     async def _publish_remote(self, raw_input: str, user_id: str) -> str:
         """Stage a remote publish — show preview and wait for confirmation."""

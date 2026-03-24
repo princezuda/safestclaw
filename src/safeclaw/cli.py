@@ -802,6 +802,82 @@ async def _blog(action: str, content: list[str] | None) -> None:
     console.print(result)
 
 
+@app.command("blog-run")
+def blog_run(
+    target: str | None = typer.Option(None, "--target", help="Named publish target (or all)"),
+    name: str = typer.Option("", "--name", help="Auto-blog schedule name to run"),
+    config: Path | None = typer.Option(None, "--config", help="Config file path"),
+    verbose: bool = typer.Option(False, "--verbose"),
+):
+    """
+    One-shot: run the auto-blog scheduler and exit. Designed for system cron.
+
+    Example crontab entry (daily at 9am):
+      0 9 * * *  cd /path/to/safeclaw && safeclaw blog-run >> ~/.safeclaw/blog-cron.log 2>&1
+    """
+    setup_logging(verbose)
+    asyncio.run(_blog_run(target=target, schedule_name=name, config_path=config))
+
+
+async def _blog_run(
+    target: str | None,
+    schedule_name: str,
+    config_path: Path | None,
+) -> None:
+    """Execute all (or one) auto-blog schedules and exit."""
+    import yaml as _yaml
+
+    cfg_file = config_path or Path("config/config.yaml")
+    config: dict = {}
+    if cfg_file.exists():
+        with open(cfg_file) as f:
+            config = _yaml.safe_load(f) or {}
+
+    auto_blogs = config.get("auto_blogs", [])
+    if not auto_blogs:
+        console.print("[yellow]No auto_blogs configured in config.yaml[/yellow]")
+        console.print(
+            "Add an auto_blogs section — see config/config.yaml for examples.\n"
+            "Or use: setup blog daemon  (inside safeclaw) for guided setup."
+        )
+        return
+
+    # Build minimal engine for the scheduler
+    from safeclaw.core.blog_scheduler import AutoBlogConfig, BlogScheduler
+    from safeclaw.core.engine import SafeClaw
+
+    engine = SafeClaw(config=config)
+    await engine.start()
+
+    scheduler = BlogScheduler(engine)
+
+    ran = 0
+    for blog_cfg_dict in auto_blogs:
+        cfg_obj = AutoBlogConfig.from_dict(blog_cfg_dict)
+        if not cfg_obj.enabled:
+            continue
+        if schedule_name and cfg_obj.name != schedule_name:
+            continue
+        if target:
+            cfg_obj.publish_target = target
+            cfg_obj.auto_publish = True
+
+        console.print(f"[blue]Running auto-blog: {cfg_obj.name}[/blue]")
+        try:
+            await scheduler._execute_auto_blog(cfg_obj)
+            console.print(f"[green]✓ {cfg_obj.name} completed[/green]")
+            ran += 1
+        except Exception as e:
+            console.print(f"[red]✗ {cfg_obj.name} failed: {e}[/red]")
+
+    await engine.stop()
+
+    if ran == 0:
+        console.print("[yellow]No schedules ran (check names/enabled flags)[/yellow]")
+    else:
+        console.print(f"[green]Done — {ran} schedule(s) ran[/green]")
+
+
 @app.command()
 def publish(
     title: str = typer.Option(..., "--title", "-t", help="Blog post title"),
