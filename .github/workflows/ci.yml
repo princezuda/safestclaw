@@ -45,7 +45,7 @@ jobs:
           pip install pytest pytest-asyncio pytest-cov
           pip install httpx beautifulsoup4 lxml
           pip install dateparser rapidfuzz
-          pip install pyyaml aiosqlite apscheduler typer rich paramiko feedparser
+          pip install pyyaml aiosqlite apscheduler typer rich paramiko feedparser sumy
 
       - name: Run tests
         run: pytest --tb=short -q
