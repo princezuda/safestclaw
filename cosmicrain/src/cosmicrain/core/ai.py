@@ -118,7 +118,7 @@ class AIWriter:
         """
         if not self.is_configured():
             raise RuntimeError(
-                "AI not configured. Run: flatblog setup ai anthropic sk-ant-..."
+                "AI not configured. Run: cosmicrain setup ai anthropic sk-ant-..."
             )
 
         system = self._build_system_prompt()

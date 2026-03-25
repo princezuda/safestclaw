@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "flatblog"
+name = "cosmicrain"
 version = "0.1.0"
 description = "Standalone flat-file AI blogging system"
 readme = "README.md"
@@ -23,7 +23,7 @@ dependencies = [
 dev = ["pytest", "pytest-asyncio"]
 
 [project.scripts]
-flatblog = "flatblog.cli:main"
+cosmicrain = "cosmicrain.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/flatblog"]
+packages = ["src/cosmicrain"]

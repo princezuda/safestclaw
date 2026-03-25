@@ -1,4 +1,4 @@
-"""Load and access flatblog config.yaml."""
+"""Load and access cosmicrain config.yaml."""
 from __future__ import annotations
 
 import os
@@ -16,7 +16,7 @@ def find_config(start: Path | None = None) -> Path:
         if candidate.exists():
             return candidate
     raise FileNotFoundError(
-        "No config.yaml found. Run `flatblog init` to create one."
+        "No config.yaml found. Run `cosmicrain init` to create one."
     )
 
 

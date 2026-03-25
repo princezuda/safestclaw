@@ -147,7 +147,7 @@ Show real commands. No placeholders like `<your-api-key>` unless there's genuine
 
 > `setup ai sk-ant-your-key` — Auto-detects Anthropic, configures everything
 
-> `flatblog bot` — starts the bot
+> `cosmicrain bot` — starts the bot
 
 Keep examples short. One command per line. Explain what it does inline, not in a separate paragraph.
 

@@ -1,4 +1,4 @@
-"""Telegram bot — manage flatblog from your phone.
+"""Telegram bot — manage cosmicrain from your phone.
 
 Conversation flows
 ──────────────────
@@ -23,7 +23,7 @@ from typing import Any
 
 import httpx
 
-log = logging.getLogger("flatblog.bot")
+log = logging.getLogger("cosmicrain.bot")
 
 # ── Telegram API helpers ───────────────────────────────────────────────────────
 
@@ -190,13 +190,13 @@ class FlatblogBot:
             )
             return
         if data == "style_reset":
-            from flatblog.core.style import reset_style
+            from cosmicrain.core.style import reset_style
             reset_style(self.root)
             await tg.edit(chat_id, msg_id, "🔄  Style guide reset to built-in SafeClaw guide.", reply_markup=None)
             await tg.send(chat_id, "Anything else?", reply_markup=MAIN_MENU)
             return
         if data == "style_clear":
-            from flatblog.core.style import style_path
+            from cosmicrain.core.style import style_path
             sp = style_path(self.root)
             if sp.exists():
                 sp.unlink()
@@ -236,7 +236,7 @@ class FlatblogBot:
             st.data.clear()
             await tg.send(
                 chat_id,
-                "<b>flatblog</b> — what would you like to do?",
+                "<b>cosmicrain</b> — what would you like to do?",
                 reply_markup=MAIN_MENU,
             )
             return
@@ -308,7 +308,7 @@ class FlatblogBot:
 
         else:
             await _reply(
-                "<b>flatblog</b> — what would you like to do?",
+                "<b>cosmicrain</b> — what would you like to do?",
                 markup=MAIN_MENU,
             )
 
@@ -347,7 +347,7 @@ class FlatblogBot:
     async def _do_write_confirm(
         self, chat_id: int, msg_id: int, *, publish: bool, tg: TG
     ) -> None:
-        from flatblog.core.post import parse_post, set_draft_flag
+        from cosmicrain.core.post import parse_post, set_draft_flag
 
         st = self._st(chat_id)
         path = Path(st.data.get("post_path", ""))
@@ -375,12 +375,12 @@ class FlatblogBot:
     # ── New blank draft ────────────────────────────────────────────────────────
 
     async def _do_new_title(self, chat_id: int, title: str, tg: TG) -> None:
-        from flatblog.core.post import write_post
+        from cosmicrain.core.post import write_post
 
         st = self._st(chat_id)
         st.step = "idle"
         posts_dir = self.root / "posts"
-        from flatblog.core.post import _slugify
+        from cosmicrain.core.post import _slugify
         slug = _slugify(title)
         from datetime import datetime
         filename = f"{datetime.today().date()}-{slug}.md"
@@ -398,7 +398,7 @@ class FlatblogBot:
     async def _show_drafts(
         self, chat_id: int, msg_id: int | None, tg: TG, *, is_edit: bool
     ) -> None:
-        from flatblog.core.post import load_all_posts
+        from cosmicrain.core.post import load_all_posts
 
         posts_dir = self.root / "posts"
         draft_posts = [p for p in load_all_posts(posts_dir, include_drafts=True) if p.draft]
@@ -432,7 +432,7 @@ class FlatblogBot:
     async def _do_publish_draft(
         self, chat_id: int, msg_id: int, slug: str, tg: TG
     ) -> None:
-        from flatblog.core.post import load_all_posts, set_draft_flag
+        from cosmicrain.core.post import load_all_posts, set_draft_flag
 
         posts_dir = self.root / "posts"
         posts = load_all_posts(posts_dir, include_drafts=True)
@@ -452,7 +452,7 @@ class FlatblogBot:
     async def _do_discard_draft(
         self, chat_id: int, msg_id: int, slug: str, tg: TG
     ) -> None:
-        from flatblog.core.post import load_all_posts
+        from cosmicrain.core.post import load_all_posts
 
         posts_dir = self.root / "posts"
         posts = load_all_posts(posts_dir, include_drafts=True)
@@ -469,7 +469,7 @@ class FlatblogBot:
     # ── Style guide ────────────────────────────────────────────────────────────
 
     async def _style_show(self, chat_id: int, msg_id: int, tg: TG) -> None:
-        from flatblog.core.style import load_style, style_path
+        from cosmicrain.core.style import load_style, style_path
 
         text = load_style(self.root)
         sp   = style_path(self.root)
@@ -493,7 +493,7 @@ class FlatblogBot:
         )
 
     async def _do_save_style_text(self, chat_id: int, text: str, tg: TG) -> None:
-        from flatblog.core.style import save_style
+        from cosmicrain.core.style import save_style
 
         st = self._st(chat_id)
         st.step = "idle"
@@ -512,7 +512,7 @@ class FlatblogBot:
         )
 
     async def _do_import_style_url(self, chat_id: int, url: str, tg: TG) -> None:
-        from flatblog.core.style import save_style, import_from_url
+        from cosmicrain.core.style import save_style, import_from_url
 
         st = self._st(chat_id)
         st.step = "idle"
@@ -533,7 +533,7 @@ class FlatblogBot:
     # ── Cover image ────────────────────────────────────────────────────────────
 
     async def _on_photo(self, chat_id: int, photo: list[dict], tg: TG) -> None:
-        from flatblog.core.post import load_all_posts
+        from cosmicrain.core.post import load_all_posts
 
         st = self._st(chat_id)
         # Pick largest photo size
@@ -562,7 +562,7 @@ class FlatblogBot:
     async def _do_attach_cover(
         self, chat_id: int, msg_id: int, slug: str, tg: TG
     ) -> None:
-        from flatblog.core.post import load_all_posts, parse_post
+        from cosmicrain.core.post import load_all_posts, parse_post
         import re as _re
 
         st = self._st(chat_id)
@@ -610,13 +610,13 @@ class FlatblogBot:
     # ── Helpers ────────────────────────────────────────────────────────────────
 
     async def _ai_write(self, topic: str):
-        from flatblog.core.ai import AIWriter
-        from flatblog.core.post import write_post, _slugify
+        from cosmicrain.core.ai import AIWriter
+        from cosmicrain.core.post import write_post, _slugify
         from datetime import datetime
 
         writer = AIWriter(self.cfg, blog_root=self.root)
         if not writer.is_configured():
-            raise RuntimeError("AI not configured. Run: flatblog setup ai")
+            raise RuntimeError("AI not configured. Run: cosmicrain setup ai")
 
         title, body, _ = await writer.generate(topic)
 
@@ -634,8 +634,8 @@ class FlatblogBot:
         return post
 
     async def _run_build(self) -> int:
-        from flatblog.core.builder import build_site
-        from flatblog.core.config import load_config
+        from cosmicrain.core.builder import build_site
+        from cosmicrain.core.config import load_config
 
         cfg = load_config(self.cfg_path)
         root = self.root
@@ -647,8 +647,8 @@ class FlatblogBot:
         return build_site(posts_dir, output_dir, theme_dir, blog_meta)
 
     async def _run_publish(self) -> list[str]:
-        from flatblog.core.publisher import publish_all
-        from flatblog.core.config import load_config
+        from cosmicrain.core.publisher import publish_all
+        from cosmicrain.core.config import load_config
 
         cfg = load_config(self.cfg_path)
         root = self.root
@@ -656,7 +656,7 @@ class FlatblogBot:
         return await publish_all(output_dir, cfg)
 
     def _status_text(self) -> str:
-        from flatblog.core.post import load_all_posts
+        from cosmicrain.core.post import load_all_posts
 
         blog  = self.cfg.get("blog", {})
         posts = load_all_posts(self.root / "posts", include_drafts=True)
@@ -666,7 +666,7 @@ class FlatblogBot:
         tgt_s = ", ".join(t.get("label", t.get("type", "?")) for t in tgts) or "none"
 
         return (
-            f"<b>{blog.get('title', 'flatblog')}</b>\n"
+            f"<b>{blog.get('title', 'cosmicrain')}</b>\n"
             f"Author: {blog.get('author', '—')}\n"
             f"URL:    {blog.get('url', '—')}\n\n"
             f"Posts:   {len(pub)}\n"
@@ -682,7 +682,7 @@ async def run_bot(token: str, cfg: dict, cfg_path: Path) -> None:
     bot    = FlatblogBot(token, cfg, cfg_path)
     offset = 0
 
-    log.info("flatblog bot started")
+    log.info("cosmicrain bot started")
     async with httpx.AsyncClient(timeout=40) as client:
         tg = TG(token, client)
         while True:

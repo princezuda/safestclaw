@@ -14,7 +14,7 @@ async def publish_all(output_dir: Path, cfg: dict[str, Any], target_label: str =
     """Publish output/ to all (or one) configured targets. Returns status lines."""
     targets = cfg.get("publish", {}).get("targets", [])
     if not targets:
-        return ["No publish targets configured. Run: flatblog setup publish sftp://..."]
+        return ["No publish targets configured. Run: cosmicrain setup publish sftp://..."]
 
     results: list[str] = []
     for t in targets:
@@ -287,7 +287,7 @@ async def _publish_telegram(
     blog_url = cfg.get("blog", {}).get("url", "").rstrip("/")
 
     if not token or not chat_id:
-        return [f"[{label}] Missing bot_token or chat_id — run: flatblog setup publish telegram"]
+        return [f"[{label}] Missing bot_token or chat_id — run: cosmicrain setup publish telegram"]
 
     root      = output_dir.parent
     posts_dir = root / "posts"

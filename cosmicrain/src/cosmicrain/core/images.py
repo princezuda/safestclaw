@@ -63,7 +63,7 @@ async def _fetch_unsplash(keywords: str, access_key: str) -> tuple[str, str]:
 
     if not access_key:
         raise ValueError(
-            "Unsplash access key not set. Run: flatblog setup images unsplash YOUR-KEY"
+            "Unsplash access key not set. Run: cosmicrain setup images unsplash YOUR-KEY"
         )
 
     query = keywords[:100]
@@ -100,7 +100,7 @@ async def _fetch_pexels(keywords: str, access_key: str) -> tuple[str, str]:
 
     if not access_key:
         raise ValueError(
-            "Pexels API key not set. Run: flatblog setup images pexels YOUR-KEY"
+            "Pexels API key not set. Run: cosmicrain setup images pexels YOUR-KEY"
         )
 
     async with httpx.AsyncClient(timeout=15) as client:

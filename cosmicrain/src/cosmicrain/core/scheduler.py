@@ -14,8 +14,8 @@ _IS_WINDOWS = platform.system() == "Windows"
 _TASK_NAME  = "FlatblogRun"
 
 
-STATE_DIR = Path.home() / ".flatblog" / "state"
-CRON_MARKER = "# flatblog-cron"
+STATE_DIR = Path.home() / ".cosmicrain" / "state"
+CRON_MARKER = "# cosmicrain-cron"
 
 
 def next_topic(topics: list[str], schedule_name: str = "default") -> str:
@@ -133,12 +133,12 @@ def _install_cron(root: Path, schedule_text: str, target: str = "") -> str:
     cron_expr = f"{minute} {hour} * * {dow if dow is not None else '*'}"
     python = sys.executable
     target_arg = f" --target {target}" if target else ""
-    log = Path.home() / ".flatblog" / "cron.log"
+    log = Path.home() / ".cosmicrain" / "cron.log"
     log.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = (
         f"cd {root.resolve()} && "
-        f"{python} -m flatblog run{target_arg} "
+        f"{python} -m cosmicrain run{target_arg} "
         f">> {log} 2>&1"
     )
     line = f"{cron_expr} {cmd} {CRON_MARKER}"
@@ -149,10 +149,10 @@ def _install_cron(root: Path, schedule_text: str, target: str = "") -> str:
         return (
             f"Cron job installed: {desc} ({cron_expr})\n"
             f"Log: {log}\n\n"
-            f"flatblog does NOT need to be running — system cron\n"
+            f"cosmicrain does NOT need to be running — system cron\n"
             f"fires a one-shot process at the scheduled time.\n\n"
-            f"  flatblog schedule status   — show jobs\n"
-            f"  flatblog schedule remove   — uninstall"
+            f"  cosmicrain schedule status   — show jobs\n"
+            f"  cosmicrain schedule remove   — uninstall"
         )
     return (
         f"Could not write crontab automatically.\n\n"
@@ -165,14 +165,14 @@ def _remove_cron() -> str:
     filtered = [l for l in lines if CRON_MARKER not in l]
     _set_crontab(filtered)
     removed = len(lines) - len(filtered)
-    return f"Removed {removed} flatblog cron job(s)."
+    return f"Removed {removed} cosmicrain cron job(s)."
 
 
 def _status_cron() -> str:
     lines = [l for l in _read_crontab() if CRON_MARKER in l]
     if not lines:
-        return "No flatblog cron jobs installed.\n  flatblog schedule daily 9am"
-    out = ["Installed flatblog cron jobs:", ""]
+        return "No cosmicrain cron jobs installed.\n  cosmicrain schedule daily 9am"
+    out = ["Installed cosmicrain cron jobs:", ""]
     for line in lines:
         parts = line.split()
         if len(parts) >= 5:
@@ -211,13 +211,13 @@ def _install_windows(root: Path, schedule_text: str, target: str = "") -> str:
     python   = sys.executable
     cfg_path = root / "config.yaml"
     target_arg = f" --config \"{cfg_path}\"" + (f" --target {target}" if target else "")
-    log      = Path.home() / ".flatblog" / "task.log"
+    log      = Path.home() / ".cosmicrain" / "task.log"
     log.parent.mkdir(parents=True, exist_ok=True)
 
     # Wrap in a cmd /c so we can redirect output to log
     task_cmd = (
         f'cmd /c "cd /d "{root.resolve()}" && '
-        f'"{python}" -m flatblog run{target_arg} >> "{log}" 2>&1"'
+        f'"{python}" -m cosmicrain run{target_arg} >> "{log}" 2>&1"'
     )
     start_time = f"{hour:02d}:{minute:02d}"
 
@@ -246,10 +246,10 @@ def _install_windows(root: Path, schedule_text: str, target: str = "") -> str:
                 f"Task Scheduler job installed: {desc}\n"
                 f"Task name: {_TASK_NAME}\n"
                 f"Log: {log}\n\n"
-                f"flatblog does NOT need to be running — Windows Task Scheduler\n"
+                f"cosmicrain does NOT need to be running — Windows Task Scheduler\n"
                 f"fires a one-shot process at the scheduled time.\n\n"
-                f"  flatblog schedule status   — show job\n"
-                f"  flatblog schedule remove   — uninstall"
+                f"  cosmicrain schedule status   — show job\n"
+                f"  cosmicrain schedule remove   — uninstall"
             )
         return (
             f"schtasks failed (code {r.returncode}):\n{r.stderr.strip()}\n\n"
@@ -283,6 +283,6 @@ def _status_windows() -> str:
         )
         if r.returncode == 0:
             return f"Windows Task Scheduler — {_TASK_NAME}:\n\n{r.stdout.strip()}"
-        return f"No Task Scheduler job found for '{_TASK_NAME}'.\n  flatblog schedule daily 9am"
+        return f"No Task Scheduler job found for '{_TASK_NAME}'.\n  cosmicrain schedule daily 9am"
     except FileNotFoundError:
         return "schtasks not found."

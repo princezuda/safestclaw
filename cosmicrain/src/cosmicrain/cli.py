@@ -1,4 +1,4 @@
-"""flatblog CLI — standalone flat-file AI blogging system."""
+"""cosmicrain CLI — standalone flat-file AI blogging system."""
 from __future__ import annotations
 
 import asyncio
@@ -17,7 +17,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 app = typer.Typer(
-    name="flatblog",
+    name="cosmicrain",
     help="Flat-file AI blogging system.",
     no_args_is_help=False,
     invoke_without_command=True,
@@ -41,7 +41,7 @@ _MENU: list = []   # filled at bottom of file after all commands are defined
 
 
 def _run_interactive_menu() -> None:
-    """Arrow-key menu — lets the user pick and run any flatblog action."""
+    """Arrow-key menu — lets the user pick and run any cosmicrain action."""
     try:
         import questionary
         from questionary import Choice, Separator
@@ -52,7 +52,7 @@ def _run_interactive_menu() -> None:
     console.print()
     console.print(
         Panel(
-            "[bold cyan]flatblog[/bold cyan]  —  flat-file AI blog, from terminal to web",
+            "[bold cyan]cosmicrain[/bold cyan]  —  flat-file AI blog, from terminal to web",
             border_style="cyan",
             padding=(0, 2),
         )
@@ -110,7 +110,7 @@ def _run_interactive_menu() -> None:
 
 
 def _load(config_path: Path | None = None):
-    from flatblog.core.config import find_config, load_config
+    from cosmicrain.core.config import find_config, load_config
     try:
         cfg_path = config_path or find_config()
         return load_config(cfg_path), cfg_path
@@ -129,9 +129,9 @@ def _root(cfg_path: Path) -> Path:
 def init(
     path: Path = typer.Argument(Path("."), help="Directory to initialise"),
 ):
-    """Initialise a new flatblog repository."""
+    """Initialise a new cosmicrain repository."""
     path = path.resolve()
-    pkg_root = Path(__file__).parent.parent.parent  # flatblog/ repo root
+    pkg_root = Path(__file__).parent.parent.parent  # cosmicrain/ repo root
 
     # Copy config template
     cfg_src = pkg_root / "config.yaml"
@@ -159,14 +159,14 @@ def init(
     # Create .gitignore
     gi = path / ".gitignore"
     if not gi.exists():
-        gi.write_text("output/\n*.pyc\n__pycache__/\n.flatblog/\n")
+        gi.write_text("output/\n*.pyc\n__pycache__/\n.cosmicrain/\n")
         console.print("[green]Created .gitignore[/green]")
 
     console.print("\n[bold]Done![/bold] Next steps:")
     console.print("  1. Edit [cyan]config.yaml[/cyan] — set blog title, author, url")
-    console.print("  2. [cyan]flatblog setup ai anthropic sk-ant-...[/cyan]  (or openai/ollama)")
-    console.print("  3. [cyan]flatblog new \"My first post\"[/cyan]")
-    console.print("  4. [cyan]flatblog build && flatblog serve[/cyan]")
+    console.print("  2. [cyan]cosmicrain setup ai anthropic sk-ant-...[/cyan]  (or openai/ollama)")
+    console.print("  3. [cyan]cosmicrain new \"My first post\"[/cyan]")
+    console.print("  4. [cyan]cosmicrain build && cosmicrain serve[/cyan]")
 
 
 # ── new ───────────────────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ def new(
     config: Optional[Path] = typer.Option(None, "--config"),
 ):
     """Create a new blank post."""
-    from flatblog.core.post import write_post, _slugify
+    from cosmicrain.core.post import write_post, _slugify
 
     cfg, cfg_path = _load(config)
     root = _root(cfg_path)
@@ -194,7 +194,7 @@ def new(
 
     write_post(path, title=title, author=author, draft=True)
     console.print(f"[green]Created:[/green] {path.relative_to(root)}")
-    console.print(f"Edit it, then run [cyan]flatblog build[/cyan] to preview.")
+    console.print(f"Edit it, then run [cyan]cosmicrain build[/cyan] to preview.")
 
 
 # ── write ─────────────────────────────────────────────────────────────────────
@@ -211,8 +211,8 @@ def write(
 
 
 async def _write(topic: str, draft: bool, fetch_image: bool, config: Path | None) -> None:
-    from flatblog.core.ai import AIWriter
-    from flatblog.core.post import write_post, _slugify
+    from cosmicrain.core.ai import AIWriter
+    from cosmicrain.core.post import write_post, _slugify
 
     cfg, cfg_path = _load(config)
     root = _root(cfg_path)
@@ -220,7 +220,7 @@ async def _write(topic: str, draft: bool, fetch_image: bool, config: Path | None
 
     writer = AIWriter(cfg, blog_root=root)
     if not writer.is_configured():
-        console.print("[red]AI not configured.[/red] Run: flatblog setup ai")
+        console.print("[red]AI not configured.[/red] Run: cosmicrain setup ai")
         raise typer.Exit(1)
 
     # Only auto-fetch if images are configured
@@ -261,7 +261,7 @@ def build(
     verbose: bool = typer.Option(False, "--verbose"),
 ):
     """Build the static site into output/."""
-    from flatblog.core.builder import build_site
+    from cosmicrain.core.builder import build_site
 
     cfg, cfg_path = _load(config)
     root = _root(cfg_path)
@@ -275,7 +275,7 @@ def build(
         raise typer.Exit(1)
 
     console.print(f"[green]Built {count} posts[/green] + index.html + feed.xml")
-    console.print(f"Preview: [cyan]flatblog serve[/cyan]")
+    console.print(f"Preview: [cyan]cosmicrain serve[/cyan]")
 
 
 # ── serve ─────────────────────────────────────────────────────────────────────
@@ -291,7 +291,7 @@ def serve(
     output_dir = root / cfg.get("output_dir", "output")
 
     if not output_dir.exists() or not any(output_dir.iterdir()):
-        console.print("[yellow]output/ is empty — run `flatblog build` first.[/yellow]")
+        console.print("[yellow]output/ is empty — run `cosmicrain build` first.[/yellow]")
         raise typer.Exit(1)
 
     import os
@@ -320,8 +320,8 @@ def publish(
 
 
 async def _publish(target: str, build_first: bool, config: Path | None) -> None:
-    from flatblog.core.builder import build_site
-    from flatblog.core.publisher import publish_all
+    from cosmicrain.core.builder import build_site
+    from cosmicrain.core.publisher import publish_all
 
     cfg, cfg_path = _load(config)
     root = _root(cfg_path)
@@ -350,11 +350,11 @@ def run(
 
 
 async def _run(target: str, config: Path | None) -> None:
-    from flatblog.core.ai import AIWriter
-    from flatblog.core.builder import build_site
-    from flatblog.core.post import write_post, _slugify
-    from flatblog.core.publisher import publish_all
-    from flatblog.core.scheduler import next_topic
+    from cosmicrain.core.ai import AIWriter
+    from cosmicrain.core.builder import build_site
+    from cosmicrain.core.post import write_post, _slugify
+    from cosmicrain.core.publisher import publish_all
+    from cosmicrain.core.scheduler import next_topic
 
     cfg, cfg_path = _load(config)
     root = _root(cfg_path)
@@ -408,14 +408,14 @@ def image(
     Fetch a cover image from Unsplash or Pexels and save to posts/images/.
 
     \b
-    flatblog image "python programming"
-    flatblog image "mountain landscape" --post 2026-03-25-my-post
+    cosmicrain image "python programming"
+    cosmicrain image "mountain landscape" --post 2026-03-25-my-post
     """
     asyncio.run(_image(keywords, post, config))
 
 
 async def _image(keywords: str, post_slug: str | None, config: Path | None) -> None:
-    from flatblog.core.images import fetch_image, list_images
+    from cosmicrain.core.images import fetch_image, list_images
 
     cfg, cfg_path = _load(config)
     root = _root(cfg_path)
@@ -424,8 +424,8 @@ async def _image(keywords: str, post_slug: str | None, config: Path | None) -> N
     if source == "none":
         console.print(
             "[yellow]Images not configured.[/yellow]\n"
-            "Run: flatblog setup images unsplash YOUR-KEY\n"
-            "  or flatblog setup images pexels YOUR-KEY"
+            "Run: cosmicrain setup images unsplash YOUR-KEY\n"
+            "  or cosmicrain setup images pexels YOUR-KEY"
         )
         raise typer.Exit(1)
 
@@ -468,7 +468,7 @@ def _patch_cover_image(post_path: Path, cover_image: str) -> None:
 @app.command()
 def drafts(config: Optional[Path] = typer.Option(None, "--config")):
     """List all draft posts."""
-    from flatblog.core.post import load_all_posts
+    from cosmicrain.core.post import load_all_posts
 
     cfg, cfg_path = _load(config)
     root = _root(cfg_path)
@@ -486,7 +486,7 @@ def drafts(config: Optional[Path] = typer.Option(None, "--config")):
     for p in draft_posts:
         t.add_row(p.url_slug, p.title, str(p.date))
     console.print(t)
-    console.print("\nTo publish: [green]flatblog publish-draft <slug>[/green]")
+    console.print("\nTo publish: [green]cosmicrain publish-draft <slug>[/green]")
 
 
 @app.command(name="publish-draft")
@@ -495,7 +495,7 @@ def publish_draft(
     config: Optional[Path] = typer.Option(None, "--config"),
 ):
     """Promote a draft to published (sets draft: false)."""
-    from flatblog.core.post import load_all_posts, set_draft_flag
+    from cosmicrain.core.post import load_all_posts, set_draft_flag
 
     cfg, cfg_path = _load(config)
     root = _root(cfg_path)
@@ -514,7 +514,7 @@ def publish_draft(
     post = matches[0]
     set_draft_flag(post.path, draft=False)
     console.print(f"[green]Published:[/green] {post.title}")
-    console.print(f"Run [cyan]flatblog build[/cyan] to rebuild the site.")
+    console.print(f"Run [cyan]cosmicrain build[/cyan] to rebuild the site.")
 
 
 @app.command()
@@ -523,7 +523,7 @@ def unpublish(
     config: Optional[Path] = typer.Option(None, "--config"),
 ):
     """Demote a published post back to draft (sets draft: true)."""
-    from flatblog.core.post import load_all_posts, set_draft_flag
+    from cosmicrain.core.post import load_all_posts, set_draft_flag
 
     cfg, cfg_path = _load(config)
     root = _root(cfg_path)
@@ -542,7 +542,7 @@ def unpublish(
     post = matches[0]
     set_draft_flag(post.path, draft=True)
     console.print(f"[yellow]Unpublished (draft):[/yellow] {post.title}")
-    console.print(f"Run [cyan]flatblog build[/cyan] to rebuild the site.")
+    console.print(f"Run [cyan]cosmicrain build[/cyan] to rebuild the site.")
 
 
 # ── topics ────────────────────────────────────────────────────────────────────
@@ -557,14 +557,14 @@ def topics(
     Manage the AI topic rotation list.
 
     \b
-    flatblog topics list
-    flatblog topics add "Python tips"
-    flatblog topics set "Python tips,AI news,Security"
-    flatblog topics clear
-    flatblog topics tone conversational
-    flatblog topics words 900
+    cosmicrain topics list
+    cosmicrain topics add "Python tips"
+    cosmicrain topics set "Python tips,AI news,Security"
+    cosmicrain topics clear
+    cosmicrain topics tone conversational
+    cosmicrain topics words 900
     """
-    from flatblog.core.config import save_config
+    from cosmicrain.core.config import save_config
 
     cfg, cfg_path = _load(config)
     topics_cfg = cfg.setdefault("topics", {})
@@ -572,7 +572,7 @@ def topics(
 
     if action == "list" or (not action):
         if not topic_list:
-            console.print("No topics yet. Use: flatblog topics add \"My topic\"")
+            console.print("No topics yet. Use: cosmicrain topics add \"My topic\"")
             return
         t = Table("#", "Topic")
         for i, tp in enumerate(topic_list, 1):
@@ -639,15 +639,15 @@ def style(
     Manage your blog's writing style guide.
 
     \b
-    flatblog style            — show the current guide
-    flatblog style edit       — open in $EDITOR (or nano/vim/notepad)
-    flatblog style import FILE — copy from a local .md file
-    flatblog style import URL  — download from a URL
-    flatblog style reset      — restore the built-in SafeClaw guide
-    flatblog style clear      — remove custom guide (falls back to AI defaults)
+    cosmicrain style            — show the current guide
+    cosmicrain style edit       — open in $EDITOR (or nano/vim/notepad)
+    cosmicrain style import FILE — copy from a local .md file
+    cosmicrain style import URL  — download from a URL
+    cosmicrain style reset      — restore the built-in SafeClaw guide
+    cosmicrain style clear      — remove custom guide (falls back to AI defaults)
     """
     import asyncio as _asyncio
-    from flatblog.core.style import (
+    from cosmicrain.core.style import (
         style_path, load_style, save_style, reset_style,
         import_from_file, import_from_url,
     )
@@ -659,7 +659,7 @@ def style(
     if action in ("show", "view"):
         text = load_style(root)
         if not text:
-            console.print("[dim]No style guide set. Run:[/dim] flatblog style reset")
+            console.print("[dim]No style guide set. Run:[/dim] cosmicrain style reset")
             return
         console.print(Panel(text, title=f"[bold]Style guide[/bold]  ({sp})", border_style="cyan"))
         return
@@ -677,7 +677,7 @@ def style(
 
     if action == "import":
         if not source:
-            console.print("[red]Provide a file path or URL.[/red]  flatblog style import PATH|URL")
+            console.print("[red]Provide a file path or URL.[/red]  cosmicrain style import PATH|URL")
             raise typer.Exit(1)
         try:
             if source.startswith("http://") or source.startswith("https://"):
@@ -726,7 +726,7 @@ def schedule(
     schedule status
     schedule remove
     """
-    from flatblog.core.scheduler import install_schedule, remove_schedule, status_schedule
+    from cosmicrain.core.scheduler import install_schedule, remove_schedule, status_schedule
 
     cfg, cfg_path = _load(config)
     root = _root(cfg_path)
@@ -756,19 +756,19 @@ def setup(
     config: Optional[Path] = typer.Option(None, "--config"),
 ):
     """
-    Configure flatblog interactively.
+    Configure cosmicrain interactively.
 
     \b
-    flatblog setup ai anthropic sk-ant-...
-    flatblog setup ai openai sk-...
-    flatblog setup ai ollama llama3.2
-    flatblog setup ai status
-    flatblog setup publish sftp://user:pass@host/remote/path
-    flatblog setup publish wp://user:pass@mysite.com
-    flatblog setup publish list
-    flatblog setup style ~/my-style.md
+    cosmicrain setup ai anthropic sk-ant-...
+    cosmicrain setup ai openai sk-...
+    cosmicrain setup ai ollama llama3.2
+    cosmicrain setup ai status
+    cosmicrain setup publish sftp://user:pass@host/remote/path
+    cosmicrain setup publish wp://user:pass@mysite.com
+    cosmicrain setup publish list
+    cosmicrain setup style ~/my-style.md
     """
-    from flatblog.core.config import save_config
+    from cosmicrain.core.config import save_config
 
     cfg, cfg_path = _load(config)
     args = args or []
@@ -785,22 +785,22 @@ def setup(
         _setup_bot(cfg, cfg_path, args)
     else:
         console.print(Panel(
-            "flatblog setup ai anthropic sk-ant-...\n"
-            "flatblog setup ai openai sk-...\n"
-            "flatblog setup ai ollama llama3.2\n"
-            "flatblog setup publish sftp://user:pass@host/path\n"
-            "flatblog setup publish wp://user:pass@mysite.com\n"
-            "flatblog setup publish telegram BOT_TOKEN CHAT_ID\n"
-            "flatblog setup images unsplash YOUR-KEY\n"
-            "flatblog setup images pexels YOUR-KEY\n"
-            "flatblog setup bot YOUR_TOKEN\n"
-            "flatblog setup style ~/my-style.md",
+            "cosmicrain setup ai anthropic sk-ant-...\n"
+            "cosmicrain setup ai openai sk-...\n"
+            "cosmicrain setup ai ollama llama3.2\n"
+            "cosmicrain setup publish sftp://user:pass@host/path\n"
+            "cosmicrain setup publish wp://user:pass@mysite.com\n"
+            "cosmicrain setup publish telegram BOT_TOKEN CHAT_ID\n"
+            "cosmicrain setup images unsplash YOUR-KEY\n"
+            "cosmicrain setup images pexels YOUR-KEY\n"
+            "cosmicrain setup bot YOUR_TOKEN\n"
+            "cosmicrain setup style ~/my-style.md",
             title="setup options",
         ))
 
 
 def _setup_ai(cfg: dict, cfg_path: Path, args: list[str]) -> None:
-    from flatblog.core.config import save_config
+    from cosmicrain.core.config import save_config
 
     if not args or args[0] == "status":
         ai = cfg.get("ai", {})
@@ -841,7 +841,7 @@ def _setup_ai(cfg: dict, cfg_path: Path, args: list[str]) -> None:
 
 
 def _setup_publish(cfg: dict, cfg_path: Path, args: list[str]) -> None:
-    from flatblog.core.config import save_config
+    from cosmicrain.core.config import save_config
 
     if not args or args[0] in ("list", "ls", "show"):
         targets = cfg.get("publish", {}).get("targets", [])
@@ -873,7 +873,7 @@ def _setup_publish(cfg: dict, cfg_path: Path, args: list[str]) -> None:
     if args[0].lower() == "telegram":
         if len(args) < 3:
             console.print(
-                "[red]Usage:[/red] flatblog setup publish telegram BOT_TOKEN CHAT_ID [label]\n"
+                "[red]Usage:[/red] cosmicrain setup publish telegram BOT_TOKEN CHAT_ID [label]\n"
                 "  BOT_TOKEN  — from @BotFather\n"
                 "  CHAT_ID    — @channel_username or numeric chat id"
             )
@@ -896,7 +896,7 @@ def _setup_publish(cfg: dict, cfg_path: Path, args: list[str]) -> None:
         console.print(f"[green]Telegram target '{label}' saved.[/green]")
         console.print(
             "  Posts will be sent to [cyan]{chat_id}[/cyan] when you run "
-            "[cyan]flatblog publish[/cyan] or [cyan]flatblog run[/cyan].\n"
+            "[cyan]cosmicrain publish[/cyan] or [cyan]cosmicrain run[/cyan].\n"
             "  New posts only — already-sent slugs are tracked in [dim].telegram_sent[/dim]."
         )
         return
@@ -948,12 +948,12 @@ def _setup_publish(cfg: dict, cfg_path: Path, args: list[str]) -> None:
 
 
 def _setup_bot(cfg: dict, cfg_path: Path, args: list[str]) -> None:
-    from flatblog.core.config import save_config
+    from cosmicrain.core.config import save_config
 
     if not args or args[0] in ("show", "status"):
         tok = cfg.get("bot", {}).get("telegram_token", "")
         console.print(f"Telegram bot token: {'set (' + tok[:8] + '…)' if tok else 'not set'}")
-        console.print("Run: flatblog bot  to start the bot.")
+        console.print("Run: cosmicrain bot  to start the bot.")
         return
 
     if args[0] in ("clear", "remove"):
@@ -965,11 +965,11 @@ def _setup_bot(cfg: dict, cfg_path: Path, args: list[str]) -> None:
     token = args[0]
     cfg.setdefault("bot", {})["telegram_token"] = token
     save_config(cfg, cfg_path)
-    console.print(f"[green]Bot token saved.[/green]  Run: [cyan]flatblog bot[/cyan]")
+    console.print(f"[green]Bot token saved.[/green]  Run: [cyan]cosmicrain bot[/cyan]")
 
 
 def _setup_images(cfg: dict, cfg_path: Path, args: list[str]) -> None:
-    from flatblog.core.config import save_config
+    from cosmicrain.core.config import save_config
 
     if not args or args[0] in ("status", "show"):
         img = cfg.get("images", {})
@@ -979,7 +979,7 @@ def _setup_images(cfg: dict, cfg_path: Path, args: list[str]) -> None:
         console.print(f"Source:     {source}")
         console.print(f"Key:        {'set' if key else 'not set'}")
         console.print(f"Save local: {save_local}")
-        console.print("\nTo set up: flatblog setup images unsplash YOUR-KEY")
+        console.print("\nTo set up: cosmicrain setup images unsplash YOUR-KEY")
         return
 
     if args[0] in ("none", "off", "disable"):
@@ -1014,12 +1014,12 @@ def _setup_images(cfg: dict, cfg_path: Path, args: list[str]) -> None:
     console.print(f"[green]{source.title()} configured.[/green]")
     console.print(f"  Save local: {save_local} (downloaded to posts/images/)")
     console.print(f"  {note}")
-    console.print("\nImages are auto-fetched when running: flatblog write / flatblog run")
-    console.print("Or manually: flatblog image \"your keywords\"")
+    console.print("\nImages are auto-fetched when running: cosmicrain write / cosmicrain run")
+    console.print("Or manually: cosmicrain image \"your keywords\"")
 
 
 def _setup_style(cfg: dict, cfg_path: Path, args: list[str]) -> None:
-    from flatblog.core.config import save_config
+    from cosmicrain.core.config import save_config
 
     if not args or args[0] in ("show", "status"):
         style = cfg.get("topics", {}).get("style_file", "")
@@ -1066,22 +1066,22 @@ def bot(
     \b
     Setup:
       1. Message @BotFather on Telegram → /newbot → copy the token
-      2. flatblog setup bot TOKEN
-         or pass it directly: flatblog bot TOKEN
+      2. cosmicrain setup bot TOKEN
+         or pass it directly: cosmicrain bot TOKEN
     """
     cfg, cfg_path = _load(config)
     tok = token or cfg.get("bot", {}).get("telegram_token", "")
     if not tok:
         console.print(
             "[red]No bot token.[/red]  "
-            "Run: [cyan]flatblog setup bot YOUR_TOKEN[/cyan]  "
-            "or pass it directly: [cyan]flatblog bot YOUR_TOKEN[/cyan]"
+            "Run: [cyan]cosmicrain setup bot YOUR_TOKEN[/cyan]  "
+            "or pass it directly: [cyan]cosmicrain bot YOUR_TOKEN[/cyan]"
         )
         raise typer.Exit(1)
 
-    from flatblog.core.telegram_bot import run_bot
+    from cosmicrain.core.telegram_bot import run_bot
 
-    console.print("[cyan]flatblog bot[/cyan] — waiting for messages. Press Ctrl+C to stop.")
+    console.print("[cyan]cosmicrain bot[/cyan] — waiting for messages. Press Ctrl+C to stop.")
     try:
         asyncio.run(run_bot(tok, cfg, cfg_path))
     except KeyboardInterrupt:
@@ -1092,7 +1092,7 @@ def bot(
 
 @app.command()
 def status(config: Optional[Path] = typer.Option(None, "--config")):
-    """Show flatblog configuration summary."""
+    """Show cosmicrain configuration summary."""
     cfg, cfg_path = _load(config)
     root = _root(cfg_path)
     posts_dir = root / "posts"
@@ -1102,7 +1102,7 @@ def status(config: Optional[Path] = typer.Option(None, "--config")):
     topics_cfg = cfg.get("topics", {})
     publish_cfg = cfg.get("publish", {})
 
-    from flatblog.core.post import load_all_posts
+    from cosmicrain.core.post import load_all_posts
     posts = load_all_posts(posts_dir, include_drafts=True)
     published = [p for p in posts if not p.draft]
     drafts = [p for p in posts if p.draft]
@@ -1132,7 +1132,7 @@ def status(config: Optional[Path] = typer.Option(None, "--config")):
         "\n".join(
             f"  {t.get('label')}: {t.get('type')} → {t.get('host') or t.get('url')}"
             for t in targets
-        ) or "[yellow]no targets — run: flatblog setup publish[/yellow]",
+        ) or "[yellow]no targets — run: cosmicrain setup publish[/yellow]",
         title="publish targets",
     ))
     console.print(Panel(
@@ -1169,7 +1169,7 @@ def _dispatch_style_write() -> None:
     try:
         cfg, cfg_path = _load(None)
         root = _root(cfg_path)
-        from flatblog.core.style import save_style, style_path
+        from cosmicrain.core.style import save_style, style_path
         save_style(root, text)
         console.print(f"[green]Style guide saved.[/green]  ({style_path(root)})")
     except SystemExit:
@@ -1282,7 +1282,7 @@ def _dispatch(action: str) -> None:  # noqa: C901
         drafts()
 
     elif action == "publish_draft":
-        from flatblog.core.post import load_all_posts
+        from cosmicrain.core.post import load_all_posts
         try:
             cfg, cfg_path = _load()
         except SystemExit:
@@ -1300,7 +1300,7 @@ def _dispatch(action: str) -> None:  # noqa: C901
             publish_draft(slug=chosen)
 
     elif action == "unpublish":
-        from flatblog.core.post import load_all_posts
+        from cosmicrain.core.post import load_all_posts
         try:
             cfg, cfg_path = _load()
         except SystemExit:
