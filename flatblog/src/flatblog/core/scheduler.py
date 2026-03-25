@@ -1,13 +1,17 @@
-"""Topic rotation state + system cron installation."""
+"""Topic rotation state + system scheduler (cron on Linux/macOS, Task Scheduler on Windows)."""
 from __future__ import annotations
 
 import json
+import platform
 import re
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+_IS_WINDOWS = platform.system() == "Windows"
+_TASK_NAME  = "FlatblogRun"
 
 
 STATE_DIR = Path.home() / ".flatblog" / "state"
@@ -87,8 +91,41 @@ def describe_schedule(cron_expr: str) -> str:
     return f"Every {days[int(dow)]} at {t}"
 
 
+def install_schedule(root: Path, schedule_text: str, target: str = "") -> str:
+    """Install a system scheduler entry (cron on Linux/macOS, Task Scheduler on Windows)."""
+    if _IS_WINDOWS:
+        return _install_windows(root, schedule_text, target)
+    return _install_cron(root, schedule_text, target)
+
+
+# Keep old name as alias
 def install_cron(root: Path, schedule_text: str, target: str = "") -> str:
-    """Install a cron job for `flatblog run` in the user's crontab."""
+    return install_schedule(root, schedule_text, target)
+
+
+def remove_schedule() -> str:
+    if _IS_WINDOWS:
+        return _remove_windows()
+    return _remove_cron()
+
+
+def remove_cron() -> str:
+    return remove_schedule()
+
+
+def status_schedule() -> str:
+    if _IS_WINDOWS:
+        return _status_windows()
+    return _status_cron()
+
+
+def status_cron() -> str:
+    return status_schedule()
+
+
+# ── Linux / macOS — crontab ────────────────────────────────────────────────────
+
+def _install_cron(root: Path, schedule_text: str, target: str = "") -> str:
     hour, minute, dow = parse_schedule(schedule_text)
     if hour is None:
         return "Could not parse schedule. Use e.g. 'daily 9am' or 'weekly monday 9am'."
@@ -112,18 +149,18 @@ def install_cron(root: Path, schedule_text: str, target: str = "") -> str:
         return (
             f"Cron job installed: {desc} ({cron_expr})\n"
             f"Log: {log}\n\n"
-            f"flatblog does NOT need to be running — the system cron\n"
-            f"starts a one-shot process at the scheduled time.\n\n"
+            f"flatblog does NOT need to be running — system cron\n"
+            f"fires a one-shot process at the scheduled time.\n\n"
             f"  flatblog daemon status   — show jobs\n"
             f"  flatblog daemon remove   — uninstall"
         )
     return (
         f"Could not write crontab automatically.\n\n"
-        f"Add this manually with `crontab -e`:\n\n  {line}"
+        f"Add this line manually with `crontab -e`:\n\n  {line}"
     )
 
 
-def remove_cron() -> str:
+def _remove_cron() -> str:
     lines = _read_crontab()
     filtered = [l for l in lines if CRON_MARKER not in l]
     _set_crontab(filtered)
@@ -131,7 +168,7 @@ def remove_cron() -> str:
     return f"Removed {removed} flatblog cron job(s)."
 
 
-def status_cron() -> str:
+def _status_cron() -> str:
     lines = [l for l in _read_crontab() if CRON_MARKER in l]
     if not lines:
         return "No flatblog cron jobs installed.\n  flatblog daemon daily 9am"
@@ -162,3 +199,90 @@ def _write_crontab(new_line: str) -> bool:
         return True
     except Exception:
         return False
+
+
+# ── Windows — Task Scheduler ───────────────────────────────────────────────────
+
+def _install_windows(root: Path, schedule_text: str, target: str = "") -> str:
+    hour, minute, dow = parse_schedule(schedule_text)
+    if hour is None:
+        return "Could not parse schedule. Use e.g. 'daily 9am' or 'weekly monday 9am'."
+
+    python   = sys.executable
+    cfg_path = root / "config.yaml"
+    target_arg = f" --config \"{cfg_path}\"" + (f" --target {target}" if target else "")
+    log      = Path.home() / ".flatblog" / "task.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+
+    # Wrap in a cmd /c so we can redirect output to log
+    task_cmd = (
+        f'cmd /c "cd /d "{root.resolve()}" && '
+        f'"{python}" -m flatblog run{target_arg} >> "{log}" 2>&1"'
+    )
+    start_time = f"{hour:02d}:{minute:02d}"
+
+    days_map = {1: "MON", 2: "TUE", 3: "WED", 4: "THU", 5: "FRI", 6: "SAT", 0: "SUN"}
+
+    base_args = [
+        "schtasks", "/create",
+        "/tn", _TASK_NAME,
+        "/tr", task_cmd,
+        "/st", start_time,
+        "/f",                    # overwrite if exists
+        "/rl", "HIGHEST",        # run with highest available privilege
+    ]
+
+    if dow is not None:
+        args = base_args + ["/sc", "weekly", "/d", days_map[dow]]
+        desc = describe_schedule(f"{minute} {hour} * * {dow}")
+    else:
+        args = base_args + ["/sc", "daily"]
+        desc = describe_schedule(f"{minute} {hour} * * *")
+
+    try:
+        r = subprocess.run(args, capture_output=True, text=True)
+        if r.returncode == 0:
+            return (
+                f"Task Scheduler job installed: {desc}\n"
+                f"Task name: {_TASK_NAME}\n"
+                f"Log: {log}\n\n"
+                f"flatblog does NOT need to be running — Windows Task Scheduler\n"
+                f"fires a one-shot process at the scheduled time.\n\n"
+                f"  flatblog daemon status   — show job\n"
+                f"  flatblog daemon remove   — uninstall"
+            )
+        return (
+            f"schtasks failed (code {r.returncode}):\n{r.stderr.strip()}\n\n"
+            f"Run manually in an elevated PowerShell:\n"
+            f"  schtasks /create /tn \"{_TASK_NAME}\" /tr \"{task_cmd}\" "
+            f"/sc {'weekly /d ' + days_map.get(dow,'MON') if dow is not None else 'daily'} "
+            f"/st {start_time} /f"
+        )
+    except FileNotFoundError:
+        return "schtasks not found. Are you on Windows?"
+
+
+def _remove_windows() -> str:
+    try:
+        r = subprocess.run(
+            ["schtasks", "/delete", "/tn", _TASK_NAME, "/f"],
+            capture_output=True, text=True,
+        )
+        if r.returncode == 0:
+            return f"Task Scheduler job '{_TASK_NAME}' removed."
+        return f"Could not remove task: {r.stderr.strip()}"
+    except FileNotFoundError:
+        return "schtasks not found."
+
+
+def _status_windows() -> str:
+    try:
+        r = subprocess.run(
+            ["schtasks", "/query", "/tn", _TASK_NAME, "/fo", "LIST"],
+            capture_output=True, text=True,
+        )
+        if r.returncode == 0:
+            return f"Windows Task Scheduler — {_TASK_NAME}:\n\n{r.stdout.strip()}"
+        return f"No Task Scheduler job found for '{_TASK_NAME}'.\n  flatblog daemon daily 9am"
+    except FileNotFoundError:
+        return "schtasks not found."

@@ -106,6 +106,14 @@ MAIN_MENU = _inline(
     [("✍️  Write post", "write"), ("📝  New draft", "new")],
     [("📋  List drafts", "drafts"), ("🚀  Publish", "publish")],
     [("🔨  Build", "build"), ("📊  Status", "status")],
+    [("🎨  Style guide", "style")],
+)
+
+STYLE_MENU = _inline(
+    [("📖 Show guide", "style_show")],
+    [("✏️  Write new guide", "style_write"), ("📥  Import URL", "style_import_url")],
+    [("🔄  Reset to built-in", "style_reset"), ("🗑️  Clear", "style_clear")],
+    [("« Back", "menu")],
 )
 
 
@@ -159,6 +167,43 @@ class FlatblogBot:
             await self._do_attach_cover(chat_id, msg_id, data[6:], tg)
             return
 
+        # Style guide callbacks
+        if data == "style_show":
+            await self._style_show(chat_id, msg_id, tg)
+            return
+        if data == "style_write":
+            st.step = "wait_style_text"
+            st.data["style_msg_id"] = msg_id
+            await tg.edit(
+                chat_id, msg_id,
+                "✏️  <b>Send your style guide as a message.</b>\n\n"
+                "<i>Paste or type your full guide. Send /cancel to abort.</i>",
+                reply_markup=None,
+            )
+            return
+        if data == "style_import_url":
+            st.step = "wait_style_url"
+            await tg.edit(
+                chat_id, msg_id,
+                "📥  <b>Send the URL to download the style guide from.</b>",
+                reply_markup=None,
+            )
+            return
+        if data == "style_reset":
+            from flatblog.core.style import reset_style
+            reset_style(self.root)
+            await tg.edit(chat_id, msg_id, "🔄  Style guide reset to built-in SafeClaw guide.", reply_markup=None)
+            await tg.send(chat_id, "Anything else?", reply_markup=MAIN_MENU)
+            return
+        if data == "style_clear":
+            from flatblog.core.style import style_path
+            sp = style_path(self.root)
+            if sp.exists():
+                sp.unlink()
+            await tg.edit(chat_id, msg_id, "🗑️  Style guide cleared. AI will use built-in defaults.", reply_markup=None)
+            await tg.send(chat_id, "Anything else?", reply_markup=MAIN_MENU)
+            return
+
         # After AI write preview: publish / draft / discard
         if data == "write_publish" and st.step == "write_preview":
             await self._do_write_confirm(chat_id, msg_id, publish=True, tg=tg)
@@ -202,6 +247,12 @@ class FlatblogBot:
             return
         if st.step == "wait_title":
             await self._do_new_title(chat_id, text, tg)
+            return
+        if st.step == "wait_style_text":
+            await self._do_save_style_text(chat_id, text, tg)
+            return
+        if st.step == "wait_style_url":
+            await self._do_import_style_url(chat_id, text, tg)
             return
 
         # Unknown text — show menu
@@ -251,6 +302,9 @@ class FlatblogBot:
         elif action == "status":
             text = self._status_text()
             await _reply(text, markup=MAIN_MENU)
+
+        elif action == "style":
+            await _reply("🎨  <b>Style guide</b>", markup=STYLE_MENU)
 
         else:
             await _reply(
@@ -411,6 +465,70 @@ class FlatblogBot:
         match.path.unlink()
         await tg.edit(chat_id, msg_id, f"🗑️  Deleted draft: <b>{match.title}</b>", reply_markup=None)
         await tg.send(chat_id, "Anything else?", reply_markup=MAIN_MENU)
+
+    # ── Style guide ────────────────────────────────────────────────────────────
+
+    async def _style_show(self, chat_id: int, msg_id: int, tg: TG) -> None:
+        from flatblog.core.style import load_style, style_path
+
+        text = load_style(self.root)
+        sp   = style_path(self.root)
+
+        if not text:
+            await tg.edit(
+                chat_id, msg_id,
+                "🎨  No style guide set yet.\n\nUse <b>Reset to built-in</b> to load the SafeClaw guide.",
+                reply_markup=STYLE_MENU,
+            )
+            return
+
+        # Telegram message limit is 4096 chars; split if needed
+        preview = text[:3800]
+        truncated = len(text) > 3800
+        footer = f"\n\n<i>({sp.name}{', truncated…' if truncated else ''})</i>"
+        await tg.edit(
+            chat_id, msg_id,
+            f"🎨  <b>Current style guide</b>\n\n<pre>{preview}</pre>{footer}",
+            reply_markup=STYLE_MENU,
+        )
+
+    async def _do_save_style_text(self, chat_id: int, text: str, tg: TG) -> None:
+        from flatblog.core.style import save_style
+
+        st = self._st(chat_id)
+        st.step = "idle"
+        st.data.clear()
+
+        if text.strip() in ("/cancel", ""):
+            await tg.send(chat_id, "Cancelled.", reply_markup=MAIN_MENU)
+            return
+
+        save_style(self.root, text)
+        lines = len(text.splitlines())
+        await tg.send(
+            chat_id,
+            f"✅  Style guide saved ({lines} lines).",
+            reply_markup=MAIN_MENU,
+        )
+
+    async def _do_import_style_url(self, chat_id: int, url: str, tg: TG) -> None:
+        from flatblog.core.style import save_style, import_from_url
+
+        st = self._st(chat_id)
+        st.step = "idle"
+
+        if url.strip() == "/cancel":
+            await tg.send(chat_id, "Cancelled.", reply_markup=MAIN_MENU)
+            return
+
+        await tg.send(chat_id, f"📥  Downloading…")
+        try:
+            text = await import_from_url(url.strip())
+            save_style(self.root, text)
+            lines = len(text.splitlines())
+            await tg.send(chat_id, f"✅  Imported ({lines} lines).", reply_markup=MAIN_MENU)
+        except Exception as e:
+            await tg.send(chat_id, f"❌  Import failed: {e}", reply_markup=MAIN_MENU)
 
     # ── Cover image ────────────────────────────────────────────────────────────
 

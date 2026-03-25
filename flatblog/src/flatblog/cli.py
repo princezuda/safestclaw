@@ -81,6 +81,7 @@ def _run_interactive_menu() -> None:
         Separator("  ── Content tools ──────────────"),
         Choice("  Fetch cover image",       value="image"),
         Choice("  List / edit topics",      value="topics"),
+        Choice("  Style guide",             value="style"),
         Choice("  Start Telegram bot",      value="bot"),
         Separator(""),
         Choice("  Exit",                    value="exit"),
@@ -626,6 +627,85 @@ def topics(
         raise typer.Exit(1)
 
 
+# ── style ─────────────────────────────────────────────────────────────────────
+
+@app.command()
+def style(
+    action: str = typer.Argument("show", help="show | edit | import | reset | clear"),
+    source: str = typer.Argument("", help="File path or URL (for import)"),
+    config: Optional[Path] = typer.Option(None, "--config"),
+):
+    """
+    Manage your blog's writing style guide.
+
+    \b
+    flatblog style            — show the current guide
+    flatblog style edit       — open in $EDITOR (or nano/vim/notepad)
+    flatblog style import FILE — copy from a local .md file
+    flatblog style import URL  — download from a URL
+    flatblog style reset      — restore the built-in SafeClaw guide
+    flatblog style clear      — remove custom guide (falls back to AI defaults)
+    """
+    import asyncio as _asyncio
+    from flatblog.core.style import (
+        style_path, load_style, save_style, reset_style,
+        import_from_file, import_from_url,
+    )
+
+    cfg, cfg_path = _load(config)
+    root = _root(cfg_path)
+    sp = style_path(root)
+
+    if action in ("show", "view"):
+        text = load_style(root)
+        if not text:
+            console.print("[dim]No style guide set. Run:[/dim] flatblog style reset")
+            return
+        console.print(Panel(text, title=f"[bold]Style guide[/bold]  ({sp})", border_style="cyan"))
+        return
+
+    if action == "edit":
+        import click
+        current = load_style(root)
+        edited = click.edit(current or "# My Writing Style Guide\n\n")
+        if edited is None:
+            console.print("[dim]No changes.[/dim]")
+            return
+        save_style(root, edited)
+        console.print(f"[green]Style guide saved.[/green]  ({sp})")
+        return
+
+    if action == "import":
+        if not source:
+            console.print("[red]Provide a file path or URL.[/red]  flatblog style import PATH|URL")
+            raise typer.Exit(1)
+        try:
+            if source.startswith("http://") or source.startswith("https://"):
+                text = _asyncio.run(import_from_url(source))
+            else:
+                text = import_from_file(source)
+            save_style(root, text)
+            lines = len(text.splitlines())
+            console.print(f"[green]Style guide imported[/green] ({lines} lines)  →  {sp}")
+        except Exception as e:
+            console.print(f"[red]Import failed:[/red] {e}")
+            raise typer.Exit(1)
+        return
+
+    if action == "reset":
+        reset_style(root)
+        console.print(f"[green]Style guide reset to built-in SafeClaw guide.[/green]  ({sp})")
+        return
+
+    if action == "clear":
+        if sp.exists():
+            sp.unlink()
+        console.print("[green]Style guide removed.[/green]  AI will use built-in anti-hype defaults.")
+        return
+
+    console.print(f"[red]Unknown action:[/red] {action}  (show|edit|import|reset|clear)")
+
+
 # ── daemon ────────────────────────────────────────────────────────────────────
 
 @app.command()
@@ -636,7 +716,8 @@ def daemon(
     config: Optional[Path] = typer.Option(None, "--config"),
 ):
     """
-    Install a system cron job so posts publish even when flatblog is off.
+    Install a system job so posts fire even when flatblog is not running.
+    Uses cron on Linux/macOS and Task Scheduler on Windows.
 
     \b
     flatblog daemon daily 9am
@@ -645,24 +726,24 @@ def daemon(
     flatblog daemon status
     flatblog daemon remove
     """
-    from flatblog.core.scheduler import install_cron, remove_cron, status_cron
+    from flatblog.core.scheduler import install_schedule, remove_schedule, status_schedule
 
     cfg, cfg_path = _load(config)
     root = _root(cfg_path)
 
     if action == "status":
-        console.print(status_cron())
+        console.print(status_schedule())
         return
 
     if action == "remove":
-        console.print(remove_cron())
+        console.print(remove_schedule())
         return
 
     # Build schedule string from action + remaining args
     schedule_parts = [action] + list(schedule or [])
     schedule_str = " ".join(schedule_parts)
 
-    msg = install_cron(root, schedule_str, target)
+    msg = install_schedule(root, schedule_str, target)
     console.print(msg)
 
 
@@ -1060,6 +1141,41 @@ def status(config: Optional[Path] = typer.Option(None, "--config")):
     ))
 
 
+def _dispatch_style_write() -> None:
+    """Let user write their style guide line by line in the terminal."""
+    console.print(
+        "\n[bold]Write your style guide[/bold]  "
+        "(type your text, enter [cyan]END[/cyan] on its own line when done, "
+        "[cyan]CANCEL[/cyan] to abort)\n"
+    )
+    lines: list[str] = []
+    while True:
+        try:
+            line = input()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if line.strip().upper() == "END":
+            break
+        if line.strip().upper() == "CANCEL":
+            console.print("[dim]Cancelled.[/dim]")
+            return
+        lines.append(line)
+
+    if not lines:
+        console.print("[dim]Nothing entered.[/dim]")
+        return
+
+    text = "\n".join(lines)
+    try:
+        cfg, cfg_path = _load(None)
+        root = _root(cfg_path)
+        from flatblog.core.style import save_style, style_path
+        save_style(root, text)
+        console.print(f"[green]Style guide saved.[/green]  ({style_path(root)})")
+    except SystemExit:
+        pass
+
+
 def _dispatch(action: str) -> None:  # noqa: C901
     """Run a command selected from the interactive menu, prompting for args."""
     try:
@@ -1241,6 +1357,30 @@ def _dispatch(action: str) -> None:  # noqa: C901
 
     elif action == "topics":
         topics()
+
+    elif action == "style":
+        sub = questionary.select(
+            "Style guide",
+            choices=[
+                questionary.Choice("Show current guide",        value="show"),
+                questionary.Choice("Edit in terminal editor",   value="edit"),
+                questionary.Choice("Write directly here",       value="write"),
+                questionary.Choice("Import from file or URL",   value="import"),
+                questionary.Choice("Reset to built-in SafeClaw guide", value="reset"),
+                questionary.Choice("Clear (remove custom guide)", value="clear"),
+            ],
+        ).ask()
+        if not sub:
+            return
+        if sub == "write":
+            _dispatch_style_write()
+        elif sub == "import":
+            src = _ask("File path or URL")
+            if src:
+                style(action="import", source=src)
+        else:
+            style(action=sub, source="")
+
 
 
 def main() -> None:
