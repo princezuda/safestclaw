@@ -23,6 +23,7 @@ class Post:
     draft: bool = False
     description: str = ""          # used in RSS + meta description
     slug: str = ""                 # derived from filename if blank
+    cover_image: str = ""          # URL or relative path (images/file.jpg)
     extra: dict[str, Any] = field(default_factory=dict)
     body: str = ""                 # raw Markdown body (no frontmatter)
 
@@ -69,6 +70,7 @@ def parse_post(path: Path) -> Post:
     if not slug:
         slug = re.sub(r"^\d{4}-\d{2}-\d{2}-", "", stem)  # strip leading date
 
+    known = {"title", "date", "author", "tags", "draft", "description", "slug", "cover_image"}
     return Post(
         path=path,
         title=meta.get("title", slug.replace("-", " ").title()),
@@ -78,8 +80,8 @@ def parse_post(path: Path) -> Post:
         draft=bool(meta.get("draft", False)),
         description=meta.get("description", ""),
         slug=slug,
-        extra={k: v for k, v in meta.items()
-               if k not in ("title", "date", "author", "tags", "draft", "description", "slug")},
+        cover_image=meta.get("cover_image", ""),
+        extra={k: v for k, v in meta.items() if k not in known},
         body=body.strip(),
     )
 
@@ -95,6 +97,7 @@ def write_post(path: Path, title: str, body: str = "", **meta: Any) -> Post:
         "tags": meta.get("tags", []),
         "draft": meta.get("draft", True),
         "description": meta.get("description", ""),
+        "cover_image": meta.get("cover_image", ""),
     }
     content = f"---\n{yaml.dump(fm, default_flow_style=False, allow_unicode=True)}---\n\n{body}\n"
     path.parent.mkdir(parents=True, exist_ok=True)

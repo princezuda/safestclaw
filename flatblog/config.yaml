@@ -42,6 +42,15 @@ publish:
   #     user: admin
   #     app_password: xxxx xxxx xxxx
 
+# Cover images for posts
+images:
+  source: none                      # none | unsplash | pexels
+  access_key: ""                    # Unsplash Client-ID or Pexels API key
+  save_local: true                  # download to posts/images/ (vs just URL in frontmatter)
+  auto_fetch: true                  # auto-fetch when writing AI posts
+  # Unsplash: free at https://unsplash.com/developers  (50 req/hour)
+  # Pexels:   free at https://www.pexels.com/api/       (200 req/hour)
+
 # Theme
 theme: default                      # folder name inside themes/
 

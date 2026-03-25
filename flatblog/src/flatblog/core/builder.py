@@ -11,6 +11,7 @@ from markdown_it import MarkdownIt
 
 from .post import Post, load_all_posts
 from .feeds import generate_rss
+from .images import copy_post_images
 
 
 md_parser = MarkdownIt("commonmark", {"html": True, "linkify": True, "typographer": True})
@@ -44,6 +45,9 @@ def build_site(
     static_src = theme_dir / "static"
     if static_src.exists():
         shutil.copytree(static_src, output_dir / "static", dirs_exist_ok=True)
+
+    # Copy post images: posts/images/ → output/images/
+    copy_post_images(posts_dir, output_dir)
 
     env = Environment(
         loader=FileSystemLoader(str(theme_dir)),

@@ -156,6 +156,38 @@ body {
 .tag-heading { margin-bottom: 2rem; }
 .tag-heading .tag { font-size: 1rem; }
 
+/* Cover images */
+.post-cover {
+  margin: -2rem -1.5rem 2rem;      /* bleed to container edges */
+  border-radius: 4px 4px 0 0;
+  overflow: hidden;
+  max-height: 420px;
+}
+.post-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 0;
+}
+
+.post-card-img {
+  display: block;
+  margin-bottom: 0.75rem;
+  border-radius: 6px;
+  overflow: hidden;
+  aspect-ratio: 16/9;
+}
+.post-card-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: opacity 0.2s;
+  border-radius: 0;
+}
+.post-card-img:hover img { opacity: 0.9; }
+
 /* Footer */
 .site-footer {
   border-top: 1px solid var(--border);

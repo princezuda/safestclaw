@@ -118,27 +118,37 @@ def new(
 def write(
     topic: str = typer.Argument(..., help="Topic to write about"),
     draft: bool = typer.Option(True, help="Save as draft (default true)"),
+    image: bool = typer.Option(True, "--image/--no-image", help="Fetch cover image"),
     config: Optional[Path] = typer.Option(None, "--config"),
 ):
     """AI-generate a blog post from a topic and save to posts/."""
-    asyncio.run(_write(topic, draft, config))
+    asyncio.run(_write(topic, draft, image, config))
 
 
-async def _write(topic: str, draft: bool, config: Path | None) -> None:
+async def _write(topic: str, draft: bool, fetch_image: bool, config: Path | None) -> None:
     from flatblog.core.ai import AIWriter
     from flatblog.core.post import write_post, _slugify
 
     cfg, cfg_path = _load(config)
     root = _root(cfg_path)
+    images_dir = root / "posts" / "images"
 
     writer = AIWriter(cfg)
     if not writer.is_configured():
         console.print("[red]AI not configured.[/red] Run: flatblog setup ai")
         raise typer.Exit(1)
 
+    # Only auto-fetch if images are configured
+    images_enabled = cfg.get("images", {}).get("source", "none") != "none"
+    do_fetch = fetch_image and images_enabled
+
     console.print(f"Writing post about: [bold]{topic}[/bold] ...")
+    if do_fetch:
+        console.print("Fetching cover image...")
     try:
-        title, body = await writer.generate(topic)
+        title, body, cover_image = await writer.generate(
+            topic, fetch_image=do_fetch, images_dir=images_dir
+        )
     except Exception as e:
         console.print(f"[red]AI error:[/red] {e}")
         raise typer.Exit(1)
@@ -147,10 +157,12 @@ async def _write(topic: str, draft: bool, config: Path | None) -> None:
     slug = _slugify(title)
     path = root / "posts" / f"{today}-{slug}.md"
     author = cfg.get("blog", {}).get("author", "")
-    write_post(path, title=title, body=body, author=author, draft=draft)
+    write_post(path, title=title, body=body, author=author, draft=draft, cover_image=cover_image)
 
     console.print(f"[green]Saved:[/green] {path.relative_to(root)}")
     console.print(f"Title: {title}")
+    if cover_image:
+        console.print(f"Cover: {cover_image}")
     if draft:
         console.print("Saved as [yellow]draft[/yellow] — set draft: false to publish.")
 
@@ -271,12 +283,19 @@ async def _run(target: str, config: Path | None) -> None:
         writer = AIWriter(cfg)
         if writer.is_configured():
             try:
-                title, body = await writer.generate(topic)
+                images_dir = root / "posts" / "images"
+                images_enabled = cfg.get("images", {}).get("source", "none") != "none"
+                title, body, cover_image = await writer.generate(
+                    topic, fetch_image=images_enabled, images_dir=images_dir
+                )
                 today = datetime.today().date()
                 slug = _slugify(title)
                 path = root / "posts" / f"{today}-{slug}.md"
                 author = cfg.get("blog", {}).get("author", "")
-                write_post(path, title=title, body=body, author=author, draft=False)
+                write_post(
+                    path, title=title, body=body, author=author,
+                    draft=False, cover_image=cover_image,
+                )
                 console.print(f"[green]Written:[/green] {path.name}")
             except Exception as e:
                 console.print(f"[yellow]AI failed ({e}), skipping write[/yellow]")
@@ -290,6 +309,73 @@ async def _run(target: str, config: Path | None) -> None:
     results = await publish_all(output_dir, cfg, target_label=target)
     for line in results:
         console.print(line)
+
+
+# ── image ─────────────────────────────────────────────────────────────────────
+
+@app.command()
+def image(
+    keywords: str = typer.Argument(..., help="Search keywords for the image"),
+    post: Optional[str] = typer.Option(None, "--post", "-p", help="Post slug to attach it to"),
+    config: Optional[Path] = typer.Option(None, "--config"),
+):
+    """
+    Fetch a cover image from Unsplash or Pexels and save to posts/images/.
+
+    \b
+    flatblog image "python programming"
+    flatblog image "mountain landscape" --post 2026-03-25-my-post
+    """
+    asyncio.run(_image(keywords, post, config))
+
+
+async def _image(keywords: str, post_slug: str | None, config: Path | None) -> None:
+    from flatblog.core.images import fetch_image, list_images
+
+    cfg, cfg_path = _load(config)
+    root = _root(cfg_path)
+    source = cfg.get("images", {}).get("source", "none")
+
+    if source == "none":
+        console.print(
+            "[yellow]Images not configured.[/yellow]\n"
+            "Run: flatblog setup images unsplash YOUR-KEY\n"
+            "  or flatblog setup images pexels YOUR-KEY"
+        )
+        raise typer.Exit(1)
+
+    images_dir = root / "posts" / "images"
+    console.print(f"Searching [cyan]{source}[/cyan] for: {keywords}")
+    result = await fetch_image(keywords, cfg, save_dir=images_dir)
+
+    if not result:
+        console.print("[red]No image found or fetch failed.[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]Saved:[/green] {result}")
+
+    # Optionally patch frontmatter of a specific post
+    if post_slug:
+        posts_dir = root / "posts"
+        matches = list(posts_dir.glob(f"*{post_slug}*.md"))
+        if not matches:
+            console.print(f"[yellow]Post not found matching: {post_slug}[/yellow]")
+        else:
+            post_path = matches[0]
+            _patch_cover_image(post_path, result)
+            console.print(f"[green]Updated cover_image in:[/green] {post_path.name}")
+
+
+def _patch_cover_image(post_path: Path, cover_image: str) -> None:
+    """Update the cover_image field in a post's frontmatter."""
+    import re
+    text = post_path.read_text(encoding="utf-8")
+    if re.search(r"^cover_image:", text, re.MULTILINE):
+        text = re.sub(r"^cover_image:.*$", f"cover_image: {cover_image}", text, flags=re.MULTILINE)
+    else:
+        # Insert after the first ---
+        text = re.sub(r"^(---\n)", f"---\ncover_image: {cover_image}\n", text, count=1)
+    post_path.write_text(text, encoding="utf-8")
 
 
 # ── topics ────────────────────────────────────────────────────────────────────
@@ -444,6 +530,8 @@ def setup(
         _setup_ai(cfg, cfg_path, args)
     elif what == "publish":
         _setup_publish(cfg, cfg_path, args)
+    elif what == "images":
+        _setup_images(cfg, cfg_path, args)
     elif what == "style":
         _setup_style(cfg, cfg_path, args)
     else:
@@ -453,6 +541,8 @@ def setup(
             "flatblog setup ai ollama llama3.2\n"
             "flatblog setup publish sftp://user:pass@host/path\n"
             "flatblog setup publish wp://user:pass@mysite.com\n"
+            "flatblog setup images unsplash YOUR-KEY\n"
+            "flatblog setup images pexels YOUR-KEY\n"
             "flatblog setup style ~/my-style.md",
             title="setup options",
         ))
@@ -571,6 +661,56 @@ def _setup_publish(cfg: dict, cfg_path: Path, args: list[str]) -> None:
     cfg["publish"]["targets"] = targets
     save_config(cfg, cfg_path)
     console.print(f"[green]Target '{label}' saved.[/green]")
+
+
+def _setup_images(cfg: dict, cfg_path: Path, args: list[str]) -> None:
+    from flatblog.core.config import save_config
+
+    if not args or args[0] in ("status", "show"):
+        img = cfg.get("images", {})
+        source = img.get("source", "none")
+        key = img.get("access_key", "")
+        save_local = img.get("save_local", True)
+        console.print(f"Source:     {source}")
+        console.print(f"Key:        {'set' if key else 'not set'}")
+        console.print(f"Save local: {save_local}")
+        console.print("\nTo set up: flatblog setup images unsplash YOUR-KEY")
+        return
+
+    if args[0] in ("none", "off", "disable"):
+        cfg.setdefault("images", {})["source"] = "none"
+        save_config(cfg, cfg_path)
+        console.print("[green]Images disabled.[/green]")
+        return
+
+    source = args[0].lower()
+    if source not in ("unsplash", "pexels"):
+        console.print(f"[red]Unknown source: {source}[/red]  (use: unsplash or pexels)")
+        return
+
+    key = args[1] if len(args) > 1 else ""
+    save_local = True
+    if len(args) > 2 and args[2].lower() in ("false", "no", "url"):
+        save_local = False
+
+    cfg.setdefault("images", {}).update({
+        "source": source,
+        "access_key": key,
+        "save_local": save_local,
+        "auto_fetch": True,
+    })
+    save_config(cfg, cfg_path)
+
+    if source == "unsplash":
+        note = "Free tier: 50 req/hour. Get a key at https://unsplash.com/developers"
+    else:
+        note = "Free tier: 200 req/hour. Get a key at https://www.pexels.com/api/"
+
+    console.print(f"[green]{source.title()} configured.[/green]")
+    console.print(f"  Save local: {save_local} (downloaded to posts/images/)")
+    console.print(f"  {note}")
+    console.print("\nImages are auto-fetched when running: flatblog write / flatblog run")
+    console.print("Or manually: flatblog image \"your keywords\"")
 
 
 def _setup_style(cfg: dict, cfg_path: Path, args: list[str]) -> None:

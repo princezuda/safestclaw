@@ -22,7 +22,12 @@
   <main class="container">
     <div class="post-list">
       {% for post in posts %}
-      <article class="post-card">
+      <article class="post-card{% if post.cover_image %} has-cover{% endif %}">
+        {% if post.cover_image %}
+        <a href="/{{ post.output_filename }}" class="post-card-img">
+          <img src="/{{ post.cover_image }}" alt="{{ post.title }}" loading="lazy">
+        </a>
+        {% endif %}
         <div class="post-card-meta">
           <time datetime="{{ post.date }}">{{ post.date | date_fmt }}</time>
           {% if post.author %} · {{ post.author }}{% endif %}

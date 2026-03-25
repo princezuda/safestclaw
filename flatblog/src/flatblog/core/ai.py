@@ -13,6 +13,7 @@ class AIWriter:
     """Thin async AI client that writes blog posts from topics."""
 
     def __init__(self, cfg: dict[str, Any]):
+        self._cfg = cfg
         ai = cfg.get("ai", {})
         self.provider = ai.get("provider", "").lower()
         self.api_key = ai.get("api_key") or os.environ.get("FLATBLOG_AI_KEY", "")
@@ -53,10 +54,17 @@ class AIWriter:
     def _build_user_prompt(self, topic: str) -> str:
         return f"Write a complete blog post about: {topic}"
 
-    async def generate(self, topic: str) -> tuple[str, str]:
+    async def generate(
+        self,
+        topic: str,
+        fetch_image: bool = False,
+        images_dir: Path | None = None,
+    ) -> tuple[str, str, str]:
         """
-        Generate a post. Returns (title, body_markdown).
-        Raises RuntimeError if not configured or on API error.
+        Generate a post. Returns (title, body_markdown, cover_image).
+
+        cover_image is a local relative path or URL if fetch_image=True,
+        else an empty string.
         """
         if not self.is_configured():
             raise RuntimeError(
@@ -71,10 +79,16 @@ class AIWriter:
         elif self.provider == "ollama":
             content = await self._call_ollama(system, user)
         else:
-            # OpenAI-compatible (openai, groq, mistral, lm-studio, etc.)
             content = await self._call_openai(system, user)
 
-        return _extract_title_body(content, topic)
+        title, body = _extract_title_body(content, topic)
+
+        cover_image = ""
+        if fetch_image:
+            from .images import fetch_image as _fetch
+            cover_image = await _fetch(title or topic, self._cfg, save_dir=images_dir)
+
+        return title, body, cover_image
 
     async def _call_anthropic(self, system: str, user: str) -> str:
         url = "https://api.anthropic.com/v1/messages"
