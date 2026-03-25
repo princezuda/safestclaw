@@ -492,28 +492,25 @@ class FlatblogBot:
     # ── Helpers ────────────────────────────────────────────────────────────────
 
     async def _ai_write(self, topic: str):
-        from flatblog.core.ai import generate_post
-        from flatblog.core.post import write_post
+        from flatblog.core.ai import AIWriter
+        from flatblog.core.post import write_post, _slugify
         from datetime import datetime
 
-        ai_cfg = self.cfg.get("ai", {})
-        blog_cfg = self.cfg.get("blog", {})
-        topics_cfg = self.cfg.get("topics", {})
+        writer = AIWriter(self.cfg, blog_root=self.root)
+        if not writer.is_configured():
+            raise RuntimeError("AI not configured. Run: flatblog setup ai")
 
-        result = await generate_post(topic, ai_cfg, blog_cfg, topics_cfg)
+        title, body, _ = await writer.generate(topic)
 
         posts_dir = self.root / "posts"
-        from flatblog.core.post import _slugify
-        slug = _slugify(result["title"])
+        slug = _slugify(title)
         filename = f"{datetime.today().date()}-{slug}.md"
         path = posts_dir / filename
 
         post = write_post(
             path,
-            title=result["title"],
-            body=result["body"],
-            description=result.get("description", ""),
-            tags=result.get("tags", []),
+            title=title,
+            body=body,
             draft=True,
         )
         return post

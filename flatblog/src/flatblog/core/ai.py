@@ -8,12 +8,24 @@ from typing import Any
 
 import httpx
 
+_BANNED_PHRASES = [
+    "in today's", "rapidly evolving", "fast-paced", "cutting-edge", "state-of-the-art",
+    "next-generation", "game-changer", "revolutionary", "paradigm shift", "disruptive",
+    "seamlessly", "effortlessly", "leverage", "utilize", "facilitate",
+    "it is important to note", "as we can see", "in conclusion", "to summarize",
+    "to wrap things up", "in this article", "this post will explore",
+    "in the world of", "in the realm of", "delve into", "dive into",
+    "tapestry", "bustling", "vibrant", "transformative", "innovative solution",
+    "unlock the potential", "harness the power", "shed light on",
+]
+
 
 class AIWriter:
     """Thin async AI client that writes blog posts from topics."""
 
-    def __init__(self, cfg: dict[str, Any]):
+    def __init__(self, cfg: dict[str, Any], blog_root: Path | None = None):
         self._cfg = cfg
+        self._blog_root = blog_root
         ai = cfg.get("ai", {})
         self.provider = ai.get("provider", "").lower()
         self.api_key = ai.get("api_key") or os.environ.get("FLATBLOG_AI_KEY", "")
@@ -31,24 +43,62 @@ class AIWriter:
         return bool(self.api_key and self.model)
 
     def _load_style(self) -> str:
-        if not self.style_file:
-            return ""
-        p = Path(self.style_file).expanduser()
-        return p.read_text(encoding="utf-8").strip() if p.exists() else ""
+        """Load style file. Resolves relative paths against the blog root."""
+        candidates: list[Path] = []
+
+        if self.style_file:
+            p = Path(self.style_file).expanduser()
+            candidates.append(p)
+            if self._blog_root and not p.is_absolute():
+                candidates.append(self._blog_root / p)
+
+        # Auto-discover style-guide.md at the blog root if no explicit file works
+        if self._blog_root:
+            candidates.append(self._blog_root / "style-guide.md")
+
+        for p in candidates:
+            if p.exists():
+                return p.read_text(encoding="utf-8").strip()
+        return ""
 
     def _build_system_prompt(self) -> str:
-        parts = [
-            "You are a skilled blog writer. Write a complete, engaging blog post in Markdown.",
-            "Start with a single # heading for the title, then write the full post body.",
-            "Do not include any preamble like 'Here is the post:' — output only the post itself.",
-        ]
-        if self.tone:
-            parts.append(f"Writing tone: {self.tone}.")
-        if self.word_count:
-            parts.append(f"Target length: approximately {self.word_count} words.")
         style = self._load_style()
+
         if style:
-            parts.append(f"\nWriting style guide:\n{style}")
+            # Style guide takes over — inject it as the primary instruction
+            parts = [
+                "You are a blog writer. Follow the style guide below exactly.",
+                "Output only the post itself in Markdown: start with # Title, then the body.",
+                "Do not add any preamble, meta-commentary, or sign-off.",
+                "",
+                style,
+                "",
+                f"Target length: approximately {self.word_count} words.",
+            ]
+            if self.tone:
+                parts.append(f"Tone: {self.tone}.")
+        else:
+            # Fallback — still enforce anti-AI-speak rules
+            banned = ", ".join(f'"{p}"' for p in _BANNED_PHRASES[:12])
+            parts = [
+                "You are a blog writer. Write a complete blog post in Markdown.",
+                "Start with a single # heading for the title, then write the body.",
+                "Output only the post itself — no preamble, no sign-off.",
+                "",
+                "Rules:",
+                "- Write directly. Get to the point in the first sentence.",
+                "- Use short and medium sentences. Vary the rhythm.",
+                "- Be specific: name the actual tools, give real numbers.",
+                "- Be honest about tradeoffs. Don't oversell.",
+                "- Do NOT use these phrases or anything like them: " + banned,
+                "- Do NOT open with a question, a definition, or a statistic you then undermine.",
+                "- Do NOT end with 'In conclusion' or 'To summarize'.",
+                "",
+                f"Target length: approximately {self.word_count} words.",
+            ]
+            if self.tone:
+                parts.append(f"Tone: {self.tone}.")
+
         return "\n".join(parts)
 
     def _build_user_prompt(self, topic: str) -> str:

@@ -217,7 +217,7 @@ async def _write(topic: str, draft: bool, fetch_image: bool, config: Path | None
     root = _root(cfg_path)
     images_dir = root / "posts" / "images"
 
-    writer = AIWriter(cfg)
+    writer = AIWriter(cfg, blog_root=root)
     if not writer.is_configured():
         console.print("[red]AI not configured.[/red] Run: flatblog setup ai")
         raise typer.Exit(1)
@@ -364,7 +364,7 @@ async def _run(target: str, config: Path | None) -> None:
     if topic_list:
         topic = next_topic(topic_list)
         console.print(f"[blue]Topic:[/blue] {topic}")
-        writer = AIWriter(cfg)
+        writer = AIWriter(cfg, blog_root=root)
         if writer.is_configured():
             try:
                 images_dir = root / "posts" / "images"

@@ -20,7 +20,7 @@ topics:
   list: []                          # e.g. ["Python tips", "AI news", "Open source"]
   tone: ""                          # conversational | technical | informative
   word_count: 800                   # target post length
-  style_file: ""                    # path to a .md style guide applied as system prompt
+  style_file: "style-guide.md"     # loaded as system prompt — edit to match your voice
 
 # Publish targets (can have multiple)
 publish:
