@@ -65,6 +65,7 @@ def _run_interactive_menu() -> None:
         Choice("  Setup AI provider",       value="setup_ai"),
         Choice("  Setup publish target",    value="setup_publish"),
         Choice("  Setup image search",      value="setup_images"),
+        Choice("  Setup Telegram bot",      value="setup_bot"),
         Separator("  ── Writing ──────────────────────"),
         Choice("  New blank draft",         value="new"),
         Choice("  Generate post with AI",   value="write"),
@@ -80,6 +81,7 @@ def _run_interactive_menu() -> None:
         Separator("  ── Content tools ──────────────"),
         Choice("  Fetch cover image",       value="image"),
         Choice("  List / edit topics",      value="topics"),
+        Choice("  Start Telegram bot",      value="bot"),
         Separator(""),
         Choice("  Exit",                    value="exit"),
     ]
@@ -698,6 +700,8 @@ def setup(
         _setup_images(cfg, cfg_path, args)
     elif what == "style":
         _setup_style(cfg, cfg_path, args)
+    elif what == "bot":
+        _setup_bot(cfg, cfg_path, args)
     else:
         console.print(Panel(
             "flatblog setup ai anthropic sk-ant-...\n"
@@ -705,8 +709,10 @@ def setup(
             "flatblog setup ai ollama llama3.2\n"
             "flatblog setup publish sftp://user:pass@host/path\n"
             "flatblog setup publish wp://user:pass@mysite.com\n"
+            "flatblog setup publish telegram BOT_TOKEN CHAT_ID\n"
             "flatblog setup images unsplash YOUR-KEY\n"
             "flatblog setup images pexels YOUR-KEY\n"
+            "flatblog setup bot YOUR_TOKEN\n"
             "flatblog setup style ~/my-style.md",
             title="setup options",
         ))
@@ -860,6 +866,27 @@ def _setup_publish(cfg: dict, cfg_path: Path, args: list[str]) -> None:
     console.print(f"[green]Target '{label}' saved.[/green]")
 
 
+def _setup_bot(cfg: dict, cfg_path: Path, args: list[str]) -> None:
+    from flatblog.core.config import save_config
+
+    if not args or args[0] in ("show", "status"):
+        tok = cfg.get("bot", {}).get("telegram_token", "")
+        console.print(f"Telegram bot token: {'set (' + tok[:8] + '…)' if tok else 'not set'}")
+        console.print("Run: flatblog bot  to start the bot.")
+        return
+
+    if args[0] in ("clear", "remove"):
+        cfg.setdefault("bot", {}).pop("telegram_token", None)
+        save_config(cfg, cfg_path)
+        console.print("[green]Bot token cleared.[/green]")
+        return
+
+    token = args[0]
+    cfg.setdefault("bot", {})["telegram_token"] = token
+    save_config(cfg, cfg_path)
+    console.print(f"[green]Bot token saved.[/green]  Run: [cyan]flatblog bot[/cyan]")
+
+
 def _setup_images(cfg: dict, cfg_path: Path, args: list[str]) -> None:
     from flatblog.core.config import save_config
 
@@ -935,6 +962,49 @@ def _setup_style(cfg: dict, cfg_path: Path, args: list[str]) -> None:
     preview = p.read_text(encoding="utf-8")[:200]
     console.print(f"[green]Style file set: {p}[/green]")
     console.print(f"Preview: {preview}...")
+
+
+# ── bot ───────────────────────────────────────────────────────────────────────
+
+@app.command()
+def bot(
+    token: str = typer.Argument("", help="Telegram bot token (or set bot.telegram_token in config)"),
+    config: Optional[Path] = typer.Option(None, "--config"),
+):
+    """Start the Telegram bot — manage your blog from your phone.
+
+    \b
+    Features:
+      ✍️  Write posts with AI — preview + publish or save as draft
+      📝  Create blank drafts
+      📋  List drafts with one-tap publish / discard
+      🚀  Build + publish to all targets
+      📷  Send a photo to use as a post's cover image
+      📊  See blog status
+
+    \b
+    Setup:
+      1. Message @BotFather on Telegram → /newbot → copy the token
+      2. flatblog setup bot TOKEN
+         or pass it directly: flatblog bot TOKEN
+    """
+    cfg, cfg_path = _load(config)
+    tok = token or cfg.get("bot", {}).get("telegram_token", "")
+    if not tok:
+        console.print(
+            "[red]No bot token.[/red]  "
+            "Run: [cyan]flatblog setup bot YOUR_TOKEN[/cyan]  "
+            "or pass it directly: [cyan]flatblog bot YOUR_TOKEN[/cyan]"
+        )
+        raise typer.Exit(1)
+
+    from flatblog.core.telegram_bot import run_bot
+
+    console.print("[cyan]flatblog bot[/cyan] — waiting for messages. Press Ctrl+C to stop.")
+    try:
+        asyncio.run(run_bot(tok, cfg, cfg_path))
+    except KeyboardInterrupt:
+        console.print("\n[dim]Bot stopped.[/dim]")
 
 
 # ── status ────────────────────────────────────────────────────────────────────
@@ -1056,6 +1126,17 @@ def _dispatch(action: str) -> None:  # noqa: C901
             token = _ask("Application password / token")
             if url and user and token:
                 setup(args=["publish", "wordpress", url, user, token])
+
+    elif action == "setup_bot":
+        console.print(
+            "\n[dim]Get a token from @BotFather on Telegram → /newbot[/dim]\n"
+        )
+        tok = _ask("Bot token")
+        if tok:
+            setup(args=["bot", tok])
+
+    elif action == "bot":
+        bot()
 
     elif action == "setup_images":
         source = questionary.select(
