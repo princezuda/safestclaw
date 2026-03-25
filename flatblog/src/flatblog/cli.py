@@ -782,6 +782,38 @@ def _setup_publish(cfg: dict, cfg_path: Path, args: list[str]) -> None:
         console.print(f"[green]Removed {removed} target(s).[/green]")
         return
 
+    # telegram TOKEN CHAT_ID [LABEL]
+    if args[0].lower() == "telegram":
+        if len(args) < 3:
+            console.print(
+                "[red]Usage:[/red] flatblog setup publish telegram BOT_TOKEN CHAT_ID [label]\n"
+                "  BOT_TOKEN  — from @BotFather\n"
+                "  CHAT_ID    — @channel_username or numeric chat id"
+            )
+            return
+        bot_token = args[1]
+        chat_id   = args[2]
+        label     = args[3] if len(args) > 3 else "telegram"
+        target = {
+            "label":     label,
+            "type":      "telegram",
+            "bot_token": bot_token,
+            "chat_id":   chat_id,
+            "silent":    False,
+        }
+        targets = cfg.setdefault("publish", {}).setdefault("targets", [])
+        targets = [t for t in targets if t.get("label") != label]
+        targets.append(target)
+        cfg["publish"]["targets"] = targets
+        save_config(cfg, cfg_path)
+        console.print(f"[green]Telegram target '{label}' saved.[/green]")
+        console.print(
+            "  Posts will be sent to [cyan]{chat_id}[/cyan] when you run "
+            "[cyan]flatblog publish[/cyan] or [cyan]flatblog run[/cyan].\n"
+            "  New posts only — already-sent slugs are tracked in [dim].telegram_sent[/dim]."
+        )
+        return
+
     # Parse URL: sftp://user:pass@host:port/path or wp://user:pass@site
     url_str = args[0]
     m = re.match(
@@ -792,7 +824,8 @@ def _setup_publish(cfg: dict, cfg_path: Path, args: list[str]) -> None:
     if not m:
         console.print(
             "[red]Could not parse URL.[/red]\n"
-            "Format: sftp://user:pass@host/path  or  wp://user:pass@mysite.com"
+            "Format: sftp://user:pass@host/path  or  wp://user:pass@mysite.com\n"
+            "        telegram BOT_TOKEN CHAT_ID"
         )
         return
 
@@ -997,11 +1030,21 @@ def _dispatch(action: str) -> None:  # noqa: C901
     elif action == "setup_publish":
         kind = questionary.select(
             "Publish target type",
-            choices=["sftp", "wordpress"],
+            choices=["telegram", "sftp", "wordpress"],
         ).ask()
         if not kind:
             return
-        if kind == "sftp":
+        if kind == "telegram":
+            console.print(
+                "\n[dim]Get a bot token from @BotFather on Telegram.\n"
+                "Chat ID can be @yourchannel or a numeric group/user id.[/dim]\n"
+            )
+            tok   = _ask("Bot token")
+            cid   = _ask("Chat ID  (e.g. @mychannel)")
+            label = _ask("Label", default="telegram")
+            if tok and cid:
+                setup(args=["publish", "telegram", tok, cid, label])
+        elif kind == "sftp":
             host  = _ask("Host")
             user  = _ask("Username")
             path_ = _ask("Remote path", default="/var/www/html")

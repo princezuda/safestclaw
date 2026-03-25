@@ -1,4 +1,4 @@
-"""Publish built site to SFTP or WordPress."""
+"""Publish built site to SFTP, WordPress, or Telegram."""
 from __future__ import annotations
 
 import asyncio
@@ -26,6 +26,8 @@ async def publish_all(output_dir: Path, cfg: dict[str, Any], target_label: str =
             results.append(await _publish_sftp(output_dir, t))
         elif ttype == "wordpress":
             results.extend(await _publish_wordpress(output_dir, t, cfg))
+        elif ttype == "telegram":
+            results.extend(await _publish_telegram(output_dir, t, cfg))
         else:
             results.append(f"Unknown target type '{ttype}' for '{label}'")
     return results
@@ -219,3 +221,150 @@ async def _wp_tag_ids(
             if cr.status_code == 201:
                 ids.append(cr.json()["id"])
     return ids
+
+
+# ── Telegram ───────────────────────────────────────────────────────────────────
+
+_SENT_FILE = ".telegram_sent"   # slug list stored in blog root
+
+
+def _tg_sent_slugs(root: Path) -> set[str]:
+    f = root / _SENT_FILE
+    if f.exists():
+        return set(f.read_text(encoding="utf-8").splitlines())
+    return set()
+
+
+def _tg_mark_sent(root: Path, slug: str) -> None:
+    f = root / _SENT_FILE
+    slugs = _tg_sent_slugs(root)
+    slugs.add(slug)
+    f.write_text("\n".join(sorted(slugs)), encoding="utf-8")
+
+
+def _tg_format_message(post: Any, blog_url: str) -> str:
+    """Build the Telegram MarkdownV2 message for a post."""
+    # Telegram MarkdownV2 requires escaping these chars outside formatting
+    _ESC = str.maketrans({c: f"\\{c}" for c in r"_*[]()~`>#+-=|{}.!"})
+
+    def esc(s: str) -> str:
+        return s.translate(_ESC)
+
+    lines: list[str] = []
+
+    # Title — bold
+    lines.append(f"*{esc(post.title)}*")
+
+    # Description or excerpt
+    desc = post.description or post.body[:200].replace("\n", " ")
+    if desc:
+        lines.append(f"\n_{esc(desc.strip())}_")
+
+    # Tags as hashtags
+    if post.tags:
+        tags_line = " ".join(
+            f"\\#{esc(t.lower().replace(' ', '_'))}" for t in post.tags
+        )
+        lines.append(f"\n{tags_line}")
+
+    # Read-more link
+    if blog_url:
+        post_url = f"{blog_url.rstrip('/')}/{post.output_filename}"
+        lines.append(f"\n[Read more]({post_url})")
+
+    return "\n".join(lines)
+
+
+async def _publish_telegram(
+    output_dir: Path, t: dict[str, Any], cfg: dict[str, Any]
+) -> list[str]:
+    from .post import load_all_posts
+
+    token    = t.get("bot_token", "")
+    chat_id  = t.get("chat_id", "")
+    label    = t.get("label", "telegram")
+    silent   = t.get("silent", False)      # disable notification sound
+    blog_url = cfg.get("blog", {}).get("url", "").rstrip("/")
+
+    if not token or not chat_id:
+        return [f"[{label}] Missing bot_token or chat_id — run: flatblog setup publish telegram"]
+
+    root      = output_dir.parent
+    posts_dir = root / "posts"
+    posts     = load_all_posts(posts_dir)
+    sent      = _tg_sent_slugs(root)
+
+    new_posts = [p for p in posts if p.url_slug not in sent]
+    if not new_posts:
+        return [f"[{label}] No new posts to send."]
+
+    tg_api = f"https://api.telegram.org/bot{token}"
+    results: list[str] = []
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        for post in new_posts:
+            text = _tg_format_message(post, blog_url)
+            ok = False
+
+            # Try sendPhoto if there's a cover image
+            if post.cover_image:
+                cover = post.cover_image
+                if cover.startswith("http://") or cover.startswith("https://"):
+                    photo: Any = cover
+                else:
+                    local = posts_dir / cover
+                    photo = open(local, "rb") if local.exists() else cover  # type: ignore[assignment]
+
+                try:
+                    if hasattr(photo, "read"):
+                        r = await client.post(
+                            f"{tg_api}/sendPhoto",
+                            data={
+                                "chat_id": chat_id,
+                                "caption": text,
+                                "parse_mode": "MarkdownV2",
+                                "disable_notification": str(silent).lower(),
+                            },
+                            files={"photo": photo},
+                        )
+                        photo.close()
+                    else:
+                        r = await client.post(
+                            f"{tg_api}/sendPhoto",
+                            json={
+                                "chat_id": chat_id,
+                                "photo": photo,
+                                "caption": text,
+                                "parse_mode": "MarkdownV2",
+                                "disable_notification": silent,
+                            },
+                        )
+                    ok = r.status_code == 200
+                    if not ok:
+                        # Caption too long or photo failed → fall through to text
+                        pass
+                except Exception:
+                    pass
+
+            # Fall back to plain sendMessage
+            if not ok:
+                r = await client.post(
+                    f"{tg_api}/sendMessage",
+                    json={
+                        "chat_id": chat_id,
+                        "text": text,
+                        "parse_mode": "MarkdownV2",
+                        "disable_web_page_preview": False,
+                        "disable_notification": silent,
+                    },
+                )
+                ok = r.status_code == 200
+
+            if ok:
+                _tg_mark_sent(root, post.url_slug)
+                results.append(f"[{label}] Sent: {post.title}")
+            else:
+                err = r.json().get("description", r.text[:120])
+                results.append(f"[{label}] Failed '{post.title}': {err}")
+
+    return results
