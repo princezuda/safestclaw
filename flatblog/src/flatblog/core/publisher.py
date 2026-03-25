@@ -127,9 +127,16 @@ async def _publish_wordpress(
                 "date": post.date.isoformat() + "T00:00:00",
             }
             if post.tags:
-                # Create tags if needed and get IDs
                 tag_ids = await _wp_tag_ids(client, base_url, auth, post.tags)
                 payload["tags"] = tag_ids
+
+            # Upload cover image and set as featured_media
+            if post.cover_image:
+                media_id = await _wp_upload_image(
+                    client, base_url, auth, post.cover_image, posts_dir, post.title
+                )
+                if media_id:
+                    payload["featured_media"] = media_id
 
             r = await client.post(api, json=payload, auth=auth)
             if r.status_code in (200, 201):
@@ -137,6 +144,65 @@ async def _publish_wordpress(
             else:
                 results.append(f"[{label}] Failed '{post.title}': {r.status_code} {r.text[:120]}")
     return results
+
+
+async def _wp_upload_image(
+    client: httpx.AsyncClient,
+    base: str,
+    auth: tuple,
+    cover_image: str,
+    posts_dir: Path,
+    post_title: str,
+) -> int | None:
+    """
+    Upload a cover image to the WordPress media library.
+
+    cover_image may be:
+      - a local relative path like "images/photo.jpg"  (resolved under posts_dir)
+      - an https:// URL (downloaded first)
+
+    Returns the WP media ID, or None on failure.
+    """
+    import mimetypes
+
+    media_api = f"{base}/wp-json/wp/v2/media"
+
+    # Resolve image bytes
+    if cover_image.startswith("http://") or cover_image.startswith("https://"):
+        try:
+            resp = await client.get(cover_image, follow_redirects=True, timeout=30)
+            resp.raise_for_status()
+            image_bytes = resp.content
+            filename = cover_image.rstrip("/").split("/")[-1].split("?")[0] or "cover.jpg"
+        except Exception:
+            return None
+    else:
+        # Local path relative to posts_dir (e.g. "images/photo.jpg")
+        local = posts_dir / cover_image
+        if not local.exists():
+            return None
+        image_bytes = local.read_bytes()
+        filename = local.name
+
+    mime, _ = mimetypes.guess_type(filename)
+    if not mime:
+        mime = "image/jpeg"
+
+    try:
+        r = await client.post(
+            media_api,
+            content=image_bytes,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Type": mime,
+            },
+            auth=auth,
+        )
+        if r.status_code == 201:
+            return r.json().get("id")
+    except Exception:
+        pass
+    return None
 
 
 async def _wp_tag_ids(
