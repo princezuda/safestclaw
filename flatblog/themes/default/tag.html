@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tag: {{ tag }} — {{ blog.title }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="/" class="site-title">{{ blog.title }}</a>
+      <nav><a href="/">Home</a><a href="/feed.xml">RSS</a></nav>
+    </div>
+  </header>
+  <main class="container">
+    <h1 class="tag-heading">Posts tagged <span class="tag">{{ tag }}</span></h1>
+    <div class="post-list">
+      {% for post in posts %}
+      <article class="post-card">
+        <div class="post-card-meta"><time datetime="{{ post.date }}">{{ post.date | date_fmt }}</time></div>
+        <h2><a href="/{{ post.output_filename }}">{{ post.title }}</a></h2>
+        {% if post.description %}<p class="post-card-excerpt">{{ post.description }}</p>{% endif %}
+      </article>
+      {% endfor %}
+    </div>
+    <p><a href="/">← All posts</a></p>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      {% if blog.author %}© {{ blog.author }} · {% endif %}
+      Powered by <a href="https://github.com/princezuda/safeclaw" rel="noopener">flatblog</a>
+    </div>
+  </footer>
+</body>
+</html>

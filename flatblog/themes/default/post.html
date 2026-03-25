@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="{{ post.description or post.body[:160]|striptags }}">
+  <title>{{ post.title }} — {{ blog.title }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="alternate" type="application/rss+xml" title="{{ blog.title }}" href="/feed.xml">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="/" class="site-title">{{ blog.title }}</a>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/feed.xml">RSS</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <article class="post">
+      <header class="post-header">
+        <h1>{{ post.title }}</h1>
+        <div class="post-meta">
+          <time datetime="{{ post.date }}">{{ post.date | date_fmt }}</time>
+          {% if post.author %} · {{ post.author }}{% endif %}
+          {% if post.tags %}
+          · {% for tag in post.tags %}<a href="/tags/{{ tag | lower | replace(' ', '-') }}.html" class="tag">{{ tag }}</a>{% if not loop.last %} {% endif %}{% endfor %}
+          {% endif %}
+        </div>
+        {% if post.description %}
+        <p class="post-description">{{ post.description }}</p>
+        {% endif %}
+      </header>
+
+      <div class="post-body">
+        {{ content }}
+      </div>
+    </article>
+
+    <nav class="post-nav">
+      <a href="/">← All posts</a>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      {% if blog.author %}© {{ blog.author }} · {% endif %}
+      Powered by <a href="https://github.com/princezuda/safeclaw" rel="noopener">flatblog</a>
+    </div>
+  </footer>
+</body>
+</html>

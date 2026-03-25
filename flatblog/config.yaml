@@ -1,0 +1,49 @@
+# flatblog configuration
+
+blog:
+  title: "My Blog"
+  description: "Thoughts and ideas"
+  author: "Your Name"
+  url: "https://yourblog.com"       # used in RSS feed and canonical links
+  posts_per_page: 10
+  date_format: "%B %d, %Y"
+
+# AI writing provider (pick one)
+ai:
+  provider: ""                      # anthropic | openai | ollama
+  api_key: ""                       # or set env var FLATBLOG_AI_KEY
+  model: ""                         # e.g. claude-3-5-haiku-latest, gpt-4o-mini, llama3.2
+  base_url: ""                      # for ollama: http://localhost:11434/api
+
+# Topic rotation for scheduled AI writing
+topics:
+  list: []                          # e.g. ["Python tips", "AI news", "Open source"]
+  tone: ""                          # conversational | technical | informative
+  word_count: 800                   # target post length
+  style_file: ""                    # path to a .md style guide applied as system prompt
+
+# Publish targets (can have multiple)
+publish:
+  targets: []
+  # Example SFTP:
+  #   - label: my-server
+  #     type: sftp
+  #     host: myserver.com
+  #     port: 22
+  #     user: deploy
+  #     password: ""                # or use key_file
+  #     key_file: ~/.ssh/id_rsa
+  #     remote_path: /var/www/blog
+  #
+  # Example WordPress:
+  #   - label: my-wp
+  #     type: wordpress
+  #     url: https://mysite.com
+  #     user: admin
+  #     app_password: xxxx xxxx xxxx
+
+# Theme
+theme: default                      # folder name inside themes/
+
+# Build output
+output_dir: output                  # relative to repo root
