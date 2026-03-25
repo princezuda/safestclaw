@@ -18,10 +18,80 @@ from rich.table import Table
 
 app = typer.Typer(
     name="flatblog",
-    help="Flat-file AI blogging system. Run `flatblog init` to get started.",
-    no_args_is_help=True,
+    help="Flat-file AI blogging system.",
+    no_args_is_help=False,
+    invoke_without_command=True,
 )
 console = Console()
+
+
+@app.callback(invoke_without_command=True)
+def _default(ctx: typer.Context = typer.Option(None, hidden=True, is_eager=False)):
+    """Show the flatblog command dashboard when run with no subcommand."""
+    if ctx.invoked_subcommand is not None:
+        return
+    _show_dashboard()
+
+
+def _show_dashboard() -> None:
+    from rich.columns import Columns
+    from rich.text import Text
+
+    console.print()
+    console.print(Panel(
+        "[bold cyan]flatblog[/bold cyan]  —  flat-file AI blog, from terminal to web\n"
+        "Run any command with [dim]--help[/dim] for details.",
+        border_style="cyan",
+        padding=(0, 2),
+    ))
+
+    def _section(title: str, rows: list[tuple[str, str]]) -> Panel:
+        t = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
+        t.add_column(style="bold green", no_wrap=True)
+        t.add_column(style="dim")
+        for cmd, desc in rows:
+            t.add_row(cmd, desc)
+        return Panel(t, title=f"[bold]{title}[/bold]", border_style="dim", padding=(0, 1))
+
+    console.print(Columns([
+        _section("Getting started", [
+            ("flatblog init [path]",    "Create a new blog"),
+            ("flatblog status",         "Show config + post counts"),
+            ("flatblog setup ai ...",   "Connect an AI provider"),
+            ("flatblog setup publish …","Add SFTP or WordPress target"),
+            ("flatblog setup images …", "Add Unsplash/Pexels images"),
+        ]),
+        _section("Writing", [
+            ("flatblog new \"Title\"",  "Create a blank draft"),
+            ("flatblog write \"Topic\"","AI-generate a post"),
+            ("flatblog drafts",         "List all drafts"),
+            ("flatblog publish-draft",  "Promote draft → live"),
+            ("flatblog unpublish",      "Demote post → draft"),
+        ]),
+    ], equal=True, expand=True))
+
+    console.print(Columns([
+        _section("Building & serving", [
+            ("flatblog build",          "Render Markdown → HTML + sitemap"),
+            ("flatblog serve",          "Preview on localhost:8000"),
+            ("flatblog publish",        "Build + push to target(s)"),
+            ("flatblog run",            "One-shot: write + build + publish"),
+            ("flatblog daemon",         "Continuous cron-style loop"),
+        ]),
+        _section("Content tools", [
+            ("flatblog image \"kw\"",   "Fetch a cover image"),
+            ("flatblog topics",         "List / rotate topics"),
+            ("flatblog setup style …",  "Load a writing style file"),
+            ("flatblog build --drafts", "Build including drafts"),
+            ("flatblog serve --port N", "Serve on custom port"),
+        ]),
+    ], equal=True, expand=True))
+
+    console.print()
+    console.print(
+        "  [dim]Quick start:[/dim]  flatblog init my-blog  →  cd my-blog  "
+        "→  flatblog setup ai anthropic KEY  →  flatblog run\n"
+    )
 
 
 def _load(config_path: Path | None = None):
@@ -376,6 +446,88 @@ def _patch_cover_image(post_path: Path, cover_image: str) -> None:
         # Insert after the first ---
         text = re.sub(r"^(---\n)", f"---\ncover_image: {cover_image}\n", text, count=1)
     post_path.write_text(text, encoding="utf-8")
+
+
+# ── drafts ────────────────────────────────────────────────────────────────────
+
+@app.command()
+def drafts(config: Optional[Path] = typer.Option(None, "--config")):
+    """List all draft posts."""
+    from flatblog.core.post import load_all_posts
+
+    cfg, cfg_path = _load(config)
+    root = _root(cfg_path)
+    posts = load_all_posts(root / "posts", include_drafts=True)
+    draft_posts = [p for p in posts if p.draft]
+
+    if not draft_posts:
+        console.print("[dim]No drafts.[/dim]")
+        return
+
+    t = Table(title=f"{len(draft_posts)} draft(s)", show_lines=False)
+    t.add_column("Slug", style="cyan")
+    t.add_column("Title")
+    t.add_column("Date", style="dim")
+    for p in draft_posts:
+        t.add_row(p.url_slug, p.title, str(p.date))
+    console.print(t)
+    console.print("\nTo publish: [green]flatblog publish-draft <slug>[/green]")
+
+
+@app.command(name="publish-draft")
+def publish_draft(
+    slug: str = typer.Argument(..., help="Post slug (or part of it)"),
+    config: Optional[Path] = typer.Option(None, "--config"),
+):
+    """Promote a draft to published (sets draft: false)."""
+    from flatblog.core.post import load_all_posts, set_draft_flag
+
+    cfg, cfg_path = _load(config)
+    root = _root(cfg_path)
+    posts = load_all_posts(root / "posts", include_drafts=True)
+    matches = [p for p in posts if p.draft and slug in p.url_slug]
+
+    if not matches:
+        console.print(f"[red]No draft found matching:[/red] {slug}")
+        raise typer.Exit(1)
+    if len(matches) > 1:
+        console.print(f"[yellow]Multiple matches — be more specific:[/yellow]")
+        for p in matches:
+            console.print(f"  {p.url_slug}")
+        raise typer.Exit(1)
+
+    post = matches[0]
+    set_draft_flag(post.path, draft=False)
+    console.print(f"[green]Published:[/green] {post.title}")
+    console.print(f"Run [cyan]flatblog build[/cyan] to rebuild the site.")
+
+
+@app.command()
+def unpublish(
+    slug: str = typer.Argument(..., help="Post slug (or part of it)"),
+    config: Optional[Path] = typer.Option(None, "--config"),
+):
+    """Demote a published post back to draft (sets draft: true)."""
+    from flatblog.core.post import load_all_posts, set_draft_flag
+
+    cfg, cfg_path = _load(config)
+    root = _root(cfg_path)
+    posts = load_all_posts(root / "posts", include_drafts=False)
+    matches = [p for p in posts if slug in p.url_slug]
+
+    if not matches:
+        console.print(f"[red]No published post found matching:[/red] {slug}")
+        raise typer.Exit(1)
+    if len(matches) > 1:
+        console.print(f"[yellow]Multiple matches — be more specific:[/yellow]")
+        for p in matches:
+            console.print(f"  {p.url_slug}")
+        raise typer.Exit(1)
+
+    post = matches[0]
+    set_draft_flag(post.path, draft=True)
+    console.print(f"[yellow]Unpublished (draft):[/yellow] {post.title}")
+    console.print(f"Run [cyan]flatblog build[/cyan] to rebuild the site.")
 
 
 # ── topics ────────────────────────────────────────────────────────────────────

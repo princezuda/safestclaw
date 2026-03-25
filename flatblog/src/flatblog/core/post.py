@@ -105,6 +105,21 @@ def write_post(path: Path, title: str, body: str = "", **meta: Any) -> Post:
     return parse_post(path)
 
 
+def set_draft_flag(path: Path, draft: bool) -> None:
+    """Toggle the draft field in a post's frontmatter in-place."""
+    text = path.read_text(encoding="utf-8")
+    if re.search(r"^draft:", text, re.MULTILINE):
+        text = re.sub(
+            r"^draft:.*$",
+            f"draft: {'true' if draft else 'false'}",
+            text,
+            flags=re.MULTILINE,
+        )
+    else:
+        text = re.sub(r"^(---\n)", f"---\ndraft: {'true' if draft else 'false'}\n", text, count=1)
+    path.write_text(text, encoding="utf-8")
+
+
 def _date_from_stem(stem: str) -> date | None:
     m = re.match(r"(\d{4})-(\d{2})-(\d{2})", stem)
     if m:

@@ -3,8 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="{{ blog.description }}">
+
+  {%- set desc = blog.description or "" %}
+
   <title>{{ blog.title }}</title>
+  <meta name="description" content="{{ desc }}">
+  {% if blog.url %}<link rel="canonical" href="{{ blog.url ~ '/' }}">{% endif %}
+
+  <!-- Open Graph -->
+  <meta property="og:type"        content="website">
+  <meta property="og:title"       content="{{ blog.title }}">
+  <meta property="og:description" content="{{ desc }}">
+  {% if blog.url %}<meta property="og:url" content="{{ blog.url ~ '/' }}">{% endif %}
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card"        content="summary">
+  <meta name="twitter:title"       content="{{ blog.title }}">
+  <meta name="twitter:description" content="{{ desc }}">
+
   <link rel="stylesheet" href="/static/style.css">
   <link rel="alternate" type="application/rss+xml" title="{{ blog.title }}" href="/feed.xml">
 </head>

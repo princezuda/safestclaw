@@ -3,8 +3,32 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="{{ post.description or post.body[:160]|striptags }}">
+
+  {%- set desc = post.description or post.body[:160] %}
+  {%- set img  = post.cover_image %}
+  {%- set url  = (blog.url or "") ~ "/" ~ post.output_filename %}
+
   <title>{{ post.title }} — {{ blog.title }}</title>
+  <meta name="description" content="{{ desc }}">
+  {% if blog.url %}<link rel="canonical" href="{{ url }}">{% endif %}
+
+  <!-- Open Graph -->
+  <meta property="og:type"        content="article">
+  <meta property="og:title"       content="{{ post.title }}">
+  <meta property="og:description" content="{{ desc }}">
+  {% if blog.url %}<meta property="og:url" content="{{ url }}">{% endif %}
+  {% if img %}<meta property="og:image" content="{{ (blog.url or '') ~ '/' ~ img }}">{% endif %}
+  <meta property="og:site_name"   content="{{ blog.title }}">
+  <meta property="article:published_time" content="{{ post.date }}T00:00:00Z">
+  {% for tag in post.tags %}<meta property="article:tag" content="{{ tag }}">
+  {% endfor %}
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card"        content="{{ 'summary_large_image' if img else 'summary' }}">
+  <meta name="twitter:title"       content="{{ post.title }}">
+  <meta name="twitter:description" content="{{ desc }}">
+  {% if img %}<meta name="twitter:image" content="{{ (blog.url or '') ~ '/' ~ img }}">{% endif %}
+
   <link rel="stylesheet" href="/static/style.css">
   <link rel="alternate" type="application/rss+xml" title="{{ blog.title }}" href="/feed.xml">
 </head>

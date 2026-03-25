@@ -113,4 +113,25 @@ def build_site(
     rss = generate_rss(posts, blog_meta)
     (output_dir / "feed.xml").write_text(rss, encoding="utf-8")
 
+    # Generate sitemap.xml
+    sitemap = _generate_sitemap(posts, blog_meta)
+    (output_dir / "sitemap.xml").write_text(sitemap, encoding="utf-8")
+
     return len(posts)
+
+
+def _generate_sitemap(posts: list[Post], blog_meta: dict) -> str:
+    base_url = blog_meta.get("url", "").rstrip("/")
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>',
+             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    # Index
+    lines.append(f"  <url><loc>{base_url}/</loc></url>")
+    for post in posts:
+        lines.append(
+            f"  <url>"
+            f"<loc>{base_url}/{post.output_filename}</loc>"
+            f"<lastmod>{post.date.isoformat()}</lastmod>"
+            f"</url>"
+        )
+    lines.append("</urlset>")
+    return "\n".join(lines)
