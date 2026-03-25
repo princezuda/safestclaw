@@ -151,8 +151,8 @@ def _install_cron(root: Path, schedule_text: str, target: str = "") -> str:
             f"Log: {log}\n\n"
             f"flatblog does NOT need to be running — system cron\n"
             f"fires a one-shot process at the scheduled time.\n\n"
-            f"  flatblog daemon status   — show jobs\n"
-            f"  flatblog daemon remove   — uninstall"
+            f"  flatblog schedule status   — show jobs\n"
+            f"  flatblog schedule remove   — uninstall"
         )
     return (
         f"Could not write crontab automatically.\n\n"
@@ -171,7 +171,7 @@ def _remove_cron() -> str:
 def _status_cron() -> str:
     lines = [l for l in _read_crontab() if CRON_MARKER in l]
     if not lines:
-        return "No flatblog cron jobs installed.\n  flatblog daemon daily 9am"
+        return "No flatblog cron jobs installed.\n  flatblog schedule daily 9am"
     out = ["Installed flatblog cron jobs:", ""]
     for line in lines:
         parts = line.split()
@@ -248,8 +248,8 @@ def _install_windows(root: Path, schedule_text: str, target: str = "") -> str:
                 f"Log: {log}\n\n"
                 f"flatblog does NOT need to be running — Windows Task Scheduler\n"
                 f"fires a one-shot process at the scheduled time.\n\n"
-                f"  flatblog daemon status   — show job\n"
-                f"  flatblog daemon remove   — uninstall"
+                f"  flatblog schedule status   — show job\n"
+                f"  flatblog schedule remove   — uninstall"
             )
         return (
             f"schtasks failed (code {r.returncode}):\n{r.stderr.strip()}\n\n"
@@ -283,6 +283,6 @@ def _status_windows() -> str:
         )
         if r.returncode == 0:
             return f"Windows Task Scheduler — {_TASK_NAME}:\n\n{r.stdout.strip()}"
-        return f"No Task Scheduler job found for '{_TASK_NAME}'.\n  flatblog daemon daily 9am"
+        return f"No Task Scheduler job found for '{_TASK_NAME}'.\n  flatblog schedule daily 9am"
     except FileNotFoundError:
         return "schtasks not found."

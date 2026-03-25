@@ -77,7 +77,7 @@ def _run_interactive_menu() -> None:
         Choice("  Serve preview",           value="serve"),
         Choice("  Publish to targets",      value="publish"),
         Choice("  Run  (write+build+push)", value="run"),
-        Choice("  Daemon  (auto loop)",     value="daemon"),
+        Choice("  Schedule  (auto-publish)", value="schedule_cmd"),
         Separator("  ── Content tools ──────────────"),
         Choice("  Fetch cover image",       value="image"),
         Choice("  List / edit topics",      value="topics"),
@@ -706,25 +706,25 @@ def style(
     console.print(f"[red]Unknown action:[/red] {action}  (show|edit|import|reset|clear)")
 
 
-# ── daemon ────────────────────────────────────────────────────────────────────
+# ── schedule ──────────────────────────────────────────────────────────────────
 
 @app.command()
-def daemon(
+def schedule(
     action: str = typer.Argument("help", help="daily|weekly|status|remove"),
-    schedule: list[str] = typer.Argument(None, help="e.g. daily 9am  or  weekly monday 9am"),
+    when: list[str] = typer.Argument(None, help="e.g. daily 9am  or  weekly monday 9am"),
     target: str = typer.Option("", "--target"),
     config: Optional[Path] = typer.Option(None, "--config"),
 ):
     """
-    Install a system job so posts fire even when flatblog is not running.
+    Schedule automatic publishing — fires even when the program is off.
     Uses cron on Linux/macOS and Task Scheduler on Windows.
 
     \b
-    flatblog daemon daily 9am
-    flatblog daemon daily 9am --target my-server
-    flatblog daemon weekly monday 9am
-    flatblog daemon status
-    flatblog daemon remove
+    schedule daily 9am
+    schedule daily 9am --target my-server
+    schedule weekly monday 9am
+    schedule status
+    schedule remove
     """
     from flatblog.core.scheduler import install_schedule, remove_schedule, status_schedule
 
@@ -740,7 +740,7 @@ def daemon(
         return
 
     # Build schedule string from action + remaining args
-    schedule_parts = [action] + list(schedule or [])
+    schedule_parts = [action] + list(when or [])
     schedule_str = " ".join(schedule_parts)
 
     msg = install_schedule(root, schedule_str, target)
@@ -1335,20 +1335,20 @@ def _dispatch(action: str) -> None:  # noqa: C901
     elif action == "run":
         run()
 
-    elif action == "daemon":
+    elif action == "schedule_cmd":
         sched = questionary.select(
-            "Schedule",
+            "Auto-publish schedule",
             choices=["daily", "weekly", "status", "remove"],
         ).ask()
         if sched in ("daily", "weekly"):
             time_str = _ask("Time (e.g. 9am)", default="9am")
             if sched == "weekly":
                 day = _ask("Day (e.g. monday)", default="monday")
-                daemon(action=sched, schedule=[day, time_str])
+                schedule(action=sched, when=[day, time_str])
             else:
-                daemon(action=sched, schedule=[time_str])
+                schedule(action=sched, when=[time_str])
         elif sched:
-            daemon(action=sched, schedule=[])
+            schedule(action=sched, when=[])
 
     elif action == "image":
         kw = _ask("Keywords for image search")
