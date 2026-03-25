@@ -26,72 +26,84 @@ console = Console()
 
 
 @app.callback(invoke_without_command=True)
-def _default(ctx: typer.Context = typer.Option(None, hidden=True, is_eager=False)):
-    """Show the flatblog command dashboard when run with no subcommand."""
+def _default(ctx: typer.Context):
+    """Interactive menu when run with no subcommand."""
     if ctx.invoked_subcommand is not None:
         return
-    _show_dashboard()
+    _run_interactive_menu()
 
 
-def _show_dashboard() -> None:
-    from rich.columns import Columns
-    from rich.text import Text
+# ─────────────────────────────────────────────────────────────────────────────
+# Interactive TUI menu
+# ─────────────────────────────────────────────────────────────────────────────
 
-    console.print()
-    console.print(Panel(
-        "[bold cyan]flatblog[/bold cyan]  —  flat-file AI blog, from terminal to web\n"
-        "Run any command with [dim]--help[/dim] for details.",
-        border_style="cyan",
-        padding=(0, 2),
-    ))
+_MENU: list = []   # filled at bottom of file after all commands are defined
 
-    def _section(title: str, rows: list[tuple[str, str]]) -> Panel:
-        t = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
-        t.add_column(style="bold green", no_wrap=True)
-        t.add_column(style="dim")
-        for cmd, desc in rows:
-            t.add_row(cmd, desc)
-        return Panel(t, title=f"[bold]{title}[/bold]", border_style="dim", padding=(0, 1))
 
-    console.print(Columns([
-        _section("Getting started", [
-            ("flatblog init [path]",    "Create a new blog"),
-            ("flatblog status",         "Show config + post counts"),
-            ("flatblog setup ai ...",   "Connect an AI provider"),
-            ("flatblog setup publish …","Add SFTP or WordPress target"),
-            ("flatblog setup images …", "Add Unsplash/Pexels images"),
-        ]),
-        _section("Writing", [
-            ("flatblog new \"Title\"",  "Create a blank draft"),
-            ("flatblog write \"Topic\"","AI-generate a post"),
-            ("flatblog drafts",         "List all drafts"),
-            ("flatblog publish-draft",  "Promote draft → live"),
-            ("flatblog unpublish",      "Demote post → draft"),
-        ]),
-    ], equal=True, expand=True))
-
-    console.print(Columns([
-        _section("Building & serving", [
-            ("flatblog build",          "Render Markdown → HTML + sitemap"),
-            ("flatblog serve",          "Preview on localhost:8000"),
-            ("flatblog publish",        "Build + push to target(s)"),
-            ("flatblog run",            "One-shot: write + build + publish"),
-            ("flatblog daemon",         "Continuous cron-style loop"),
-        ]),
-        _section("Content tools", [
-            ("flatblog image \"kw\"",   "Fetch a cover image"),
-            ("flatblog topics",         "List / rotate topics"),
-            ("flatblog setup style …",  "Load a writing style file"),
-            ("flatblog build --drafts", "Build including drafts"),
-            ("flatblog serve --port N", "Serve on custom port"),
-        ]),
-    ], equal=True, expand=True))
+def _run_interactive_menu() -> None:
+    """Arrow-key menu — lets the user pick and run any flatblog action."""
+    try:
+        import questionary
+        from questionary import Choice, Separator
+    except ImportError:
+        console.print("[red]questionary not installed.[/red]  Run: pip install questionary")
+        raise typer.Exit(1)
 
     console.print()
     console.print(
-        "  [dim]Quick start:[/dim]  flatblog init my-blog  →  cd my-blog  "
-        "→  flatblog setup ai anthropic KEY  →  flatblog run\n"
+        Panel(
+            "[bold cyan]flatblog[/bold cyan]  —  flat-file AI blog, from terminal to web",
+            border_style="cyan",
+            padding=(0, 2),
+        )
     )
+
+    choices: list = [
+        Separator("  ── Getting started ──────────────"),
+        Choice("  Init new blog",           value="init"),
+        Choice("  Status / overview",       value="status"),
+        Choice("  Setup AI provider",       value="setup_ai"),
+        Choice("  Setup publish target",    value="setup_publish"),
+        Choice("  Setup image search",      value="setup_images"),
+        Separator("  ── Writing ──────────────────────"),
+        Choice("  New blank draft",         value="new"),
+        Choice("  Generate post with AI",   value="write"),
+        Choice("  List drafts",             value="drafts"),
+        Choice("  Publish draft → live",    value="publish_draft"),
+        Choice("  Unpublish post → draft",  value="unpublish"),
+        Separator("  ── Build & serve ──────────────"),
+        Choice("  Build site",              value="build"),
+        Choice("  Serve preview",           value="serve"),
+        Choice("  Publish to targets",      value="publish"),
+        Choice("  Run  (write+build+push)", value="run"),
+        Choice("  Daemon  (auto loop)",     value="daemon"),
+        Separator("  ── Content tools ──────────────"),
+        Choice("  Fetch cover image",       value="image"),
+        Choice("  List / edit topics",      value="topics"),
+        Separator(""),
+        Choice("  Exit",                    value="exit"),
+    ]
+
+    action = questionary.select(
+        "What would you like to do?",
+        choices=choices,
+        use_indicator=True,
+        use_shortcuts=False,
+        style=questionary.Style([
+            ("separator",        "fg:#555555"),
+            ("selected",         "fg:#00d7d7 bold"),
+            ("pointer",          "fg:#00d7d7 bold"),
+            ("highlighted",      "fg:#ffffff"),
+            ("answer",           "fg:#00d7d7 bold"),
+            ("question",         "bold"),
+        ]),
+    ).ask()
+
+    if not action or action == "exit":
+        return
+
+    console.print()
+    _dispatch(action)
 
 
 def _load(config_path: Path | None = None):
@@ -943,6 +955,168 @@ def status(config: Optional[Path] = typer.Option(None, "--config")):
         f"Posts:  {len(published)}\nDrafts: {len(drafts)}",
         title="content",
     ))
+
+
+def _dispatch(action: str) -> None:  # noqa: C901
+    """Run a command selected from the interactive menu, prompting for args."""
+    try:
+        import questionary
+    except ImportError:
+        console.print("[red]questionary not installed.[/red]")
+        return
+
+    def _ask(msg: str, default: str = "") -> str:
+        return questionary.text(msg, default=default).ask() or default
+
+    def _confirm(msg: str) -> bool:
+        return questionary.confirm(msg, default=False).ask()
+
+    if action == "init":
+        where = _ask("Directory to create blog in", default="my-blog")
+        if where:
+            init(path=Path(where))
+
+    elif action == "status":
+        status()
+
+    elif action == "setup_ai":
+        provider = questionary.select(
+            "AI provider",
+            choices=["anthropic", "openai", "openrouter", "ollama"],
+        ).ask()
+        if not provider:
+            return
+        if provider == "ollama":
+            model = _ask("Ollama model", default="llama3")
+            setup(args=["ai", provider, model])
+        else:
+            key = _ask(f"{provider.title()} API key")
+            if key:
+                setup(args=["ai", provider, key])
+
+    elif action == "setup_publish":
+        kind = questionary.select(
+            "Publish target type",
+            choices=["sftp", "wordpress"],
+        ).ask()
+        if not kind:
+            return
+        if kind == "sftp":
+            host  = _ask("Host")
+            user  = _ask("Username")
+            path_ = _ask("Remote path", default="/var/www/html")
+            if host and user:
+                setup(args=["publish", "sftp", host, user, path_])
+        else:
+            url   = _ask("WordPress site URL")
+            user  = _ask("WordPress username")
+            token = _ask("Application password / token")
+            if url and user and token:
+                setup(args=["publish", "wordpress", url, user, token])
+
+    elif action == "setup_images":
+        source = questionary.select(
+            "Image source",
+            choices=["unsplash", "pexels", "none"],
+        ).ask()
+        if not source:
+            return
+        if source in ("unsplash", "pexels"):
+            key = _ask(f"{source.title()} API key")
+            if key:
+                setup(args=["images", source, key])
+        else:
+            setup(args=["images", "none"])
+
+    elif action == "new":
+        title = _ask("Post title")
+        if title:
+            new(title=title)
+
+    elif action == "write":
+        topic = _ask("Topic")
+        if topic:
+            write(topic=topic)
+
+    elif action == "drafts":
+        drafts()
+
+    elif action == "publish_draft":
+        from flatblog.core.post import load_all_posts
+        try:
+            cfg, cfg_path = _load()
+        except SystemExit:
+            return
+        root = _root(cfg_path)
+        draft_posts = [p for p in load_all_posts(root / "posts", include_drafts=True) if p.draft]
+        if not draft_posts:
+            console.print("[dim]No drafts to publish.[/dim]")
+            return
+        chosen = questionary.select(
+            "Which draft?",
+            choices=[questionary.Choice(f"{p.title}  [{p.url_slug}]", value=p.url_slug) for p in draft_posts],
+        ).ask()
+        if chosen:
+            publish_draft(slug=chosen)
+
+    elif action == "unpublish":
+        from flatblog.core.post import load_all_posts
+        try:
+            cfg, cfg_path = _load()
+        except SystemExit:
+            return
+        root = _root(cfg_path)
+        live_posts = load_all_posts(root / "posts", include_drafts=False)
+        if not live_posts:
+            console.print("[dim]No published posts.[/dim]")
+            return
+        chosen = questionary.select(
+            "Which post to unpublish?",
+            choices=[questionary.Choice(f"{p.title}  [{p.url_slug}]", value=p.url_slug) for p in live_posts],
+        ).ask()
+        if chosen:
+            unpublish(slug=chosen)
+
+    elif action == "build":
+        include_drafts = _confirm("Include drafts in build?")
+        build(drafts=include_drafts)
+
+    elif action == "serve":
+        port_str = _ask("Port", default="4000")
+        try:
+            port = int(port_str)
+        except ValueError:
+            port = 4000
+        serve(port=port)
+
+    elif action == "publish":
+        publish()
+
+    elif action == "run":
+        run()
+
+    elif action == "daemon":
+        sched = questionary.select(
+            "Schedule",
+            choices=["daily", "weekly", "status", "remove"],
+        ).ask()
+        if sched in ("daily", "weekly"):
+            time_str = _ask("Time (e.g. 9am)", default="9am")
+            if sched == "weekly":
+                day = _ask("Day (e.g. monday)", default="monday")
+                daemon(action=sched, schedule=[day, time_str])
+            else:
+                daemon(action=sched, schedule=[time_str])
+        elif sched:
+            daemon(action=sched, schedule=[])
+
+    elif action == "image":
+        kw = _ask("Keywords for image search")
+        if kw:
+            image(keywords=kw)
+
+    elif action == "topics":
+        topics()
 
 
 def main() -> None:
