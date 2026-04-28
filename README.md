@@ -266,6 +266,12 @@ handled entirely locally with zero tokens consumed.
 
 ## Installation
 
+> **Heads up — name collision on PyPI.** The `safeclaw` name on PyPI is held by
+> an unrelated project. Running `pip install safeclaw` or `pipx install safeclaw`
+> will install that other package and crash with `ModuleNotFoundError: No module
+> named 'fcntl'` on Windows (issue #33). Install from this Git repo instead, as
+> shown below.
+
 ### Using pipx (recommended)
 
 ```bash
@@ -274,22 +280,29 @@ handled entirely locally with zero tokens consumed.
 sudo apt install pipx
 # macOS:
 brew install pipx
+# Windows (PowerShell):
+python -m pip install --user pipx
+python -m pipx ensurepath
 
 pipx ensurepath
 
-# Install SafeClaw
-pipx install safeclaw
+# Install SafeClaw from this repo
+pipx install git+https://github.com/princezuda/safeclaw.git
 ```
 
 ### Using pip with virtual environment
 
 ```bash
 # Create and activate venv
+# Linux/macOS:
 python3 -m venv ~/.safeclaw-venv
 source ~/.safeclaw-venv/bin/activate
+# Windows (PowerShell):
+python -m venv $HOME\.safeclaw-venv
+$HOME\.safeclaw-venv\Scripts\Activate.ps1
 
-# Install SafeClaw
-pip install safeclaw
+# Install SafeClaw from this repo
+pip install git+https://github.com/princezuda/safeclaw.git
 ```
 
 ### From source
@@ -302,18 +315,18 @@ pip install -e .
 
 ### Optional ML Features
 
+Install extras the same way — replace `safeclaw` with the git URL or use the
+local checkout:
+
 ```bash
-# NLP - spaCy named entity recognition (~50MB)
-pip install safeclaw[nlp]
+# From a local clone (cd into the repo first)
+pip install -e ".[nlp]"     # spaCy NER (~50MB)
+pip install -e ".[vision]"  # YOLO + OCR (~2GB, needs PyTorch)
+pip install -e ".[ocr]"     # OCR only (needs Tesseract)
+pip install -e ".[ml]"      # all ML extras
 
-# Vision - YOLO object detection + OCR (~2GB, requires PyTorch)
-pip install safeclaw[vision]
-
-# OCR only - text extraction from images (lightweight, requires Tesseract)
-pip install safeclaw[ocr]
-
-# All ML features
-pip install safeclaw[ml]
+# Or directly from GitHub
+pipx install "git+https://github.com/princezuda/safeclaw.git#egg=safeclaw[ml]"
 ```
 
 **Requirements:** Python 3.11+, ~50MB disk (base), ~2GB additional for vision features. Runs on Linux, macOS, and Windows.
