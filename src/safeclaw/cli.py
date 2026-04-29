@@ -11,6 +11,7 @@ Usage:
 
 import asyncio
 import logging
+import sys
 from pathlib import Path
 
 import typer
@@ -38,6 +39,7 @@ from safeclaw.core.documents import DocumentReader
 from safeclaw.core.engine import SafeClaw
 from safeclaw.core.feeds import PRESET_FEEDS, FeedReader
 from safeclaw.core.prompt_builder import PromptBuilder
+from safeclaw.core.setup_wizard import offer_wizard_if_first_run, run_wizard
 from safeclaw.core.summarizer import Summarizer, SummaryMethod
 from safeclaw.core.writing_style import (
     load_writing_profile,
@@ -327,6 +329,10 @@ def main(
 
 async def run_cli(config_path: Path | None = None) -> None:
     """Run interactive CLI."""
+    resolved_config = config_path or Path("config/config.yaml")
+    if offer_wizard_if_first_run(resolved_config, console):
+        await run_wizard(resolved_config, console)
+
     engine = create_engine(config_path)
 
     # Add CLI channel
@@ -929,6 +935,9 @@ async def _publish(
 @app.command()
 def init(
     path: Path = typer.Argument(Path("."), help="Directory to initialize"),
+    wizard: bool = typer.Option(
+        True, "--wizard/--no-wizard", help="Run the interactive setup wizard"
+    ),
 ):
     """Initialize SafeClaw configuration."""
     config_dir = path / "config"
@@ -947,7 +956,26 @@ def init(
         console.print(f"[green]Created {intents_file}[/green]")
 
     console.print("\n[bold]SafeClaw initialized![/bold]")
-    console.print("Edit config/config.yaml to configure your assistant.")
+
+    if wizard and sys.stdin.isatty():
+        console.print()
+        asyncio.run(run_wizard(config_file, console))
+    else:
+        console.print("Edit config/config.yaml to configure your assistant,")
+        console.print("or run [bold]safeclaw setup[/bold] to launch the wizard.")
+
+
+@app.command()
+def setup(
+    config: Path | None = typer.Option(
+        None, "--config", "-c", help="Config file path"
+    ),
+    verbose: bool = typer.Option(False, "--verbose"),
+):
+    """Run the interactive setup wizard (local / LLM / hybrid)."""
+    setup_logging(verbose)
+    config_path = config or Path("config/config.yaml")
+    asyncio.run(run_wizard(config_path, console))
 
 
 DEFAULT_CONFIG = """# SafeClaw Configuration
