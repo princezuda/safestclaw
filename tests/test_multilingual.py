@@ -24,8 +24,8 @@ def _load_module(name: str, filepath: Path):
 
 # Pre-load i18n so the parser import can find it
 _i18n_mod = _load_module(
-    "safeclaw.core.i18n",
-    SRC / "safeclaw" / "core" / "i18n.py",
+    "safestclaw.core.i18n",
+    SRC / "safestclaw" / "core" / "i18n.py",
 )
 
 
@@ -91,8 +91,8 @@ class TestI18nModule:
 
 # Load parser module (depends on i18n being in sys.modules)
 _parser_mod = _load_module(
-    "safeclaw.core.parser",
-    SRC / "safeclaw" / "core" / "parser.py",
+    "safestclaw.core.parser",
+    SRC / "safestclaw" / "core" / "parser.py",
 )
 
 

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to SafeClaw will be documented in this file.
+All notable changes to SafestClaw will be documented in this file.
 
 Every huge milestone, we add something new. We just hit **100 stars!**
 
@@ -19,7 +19,7 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 - **Super Simple AI Setup** — Enter your key and go
   - `setup ai sk-ant-...` — Auto-detects Anthropic, configures everything
   - `setup ai sk-...` / `setup ai AI...` / `setup ai gsk_...` — OpenAI, Google, Groq
-  - `setup ai local` — Auto-installs Ollama, downloads model, configures SafeClaw
+  - `setup ai local` — Auto-installs Ollama, downloads model, configures SafestClaw
   - `setup ai local coding/writing/small` — Model presets for different use cases
   - `setup ai status` — Check what's configured
   - No YAML editing needed — the command handles config.yaml for you
@@ -29,7 +29,7 @@ Every huge milestone, we add something new. We just hit **100 stars!**
   - Ordinals: "first", "second", "third" → 1, 2, 3
   - Common typo auto-correction: "remaind" → "remind", "summerize" → "summarize"
   - Shorthand expansion: "tmrw" → "tomorrow", "hrs" → "hours"
-  - Auto-learns corrections: when a failed command is followed by a successful one, SafeClaw remembers the mapping for next time
+  - Auto-learns corrections: when a failed command is followed by a successful one, SafestClaw remembers the mapping for next time
 
 ### Changed
 - Version bump to 0.4.0
@@ -108,7 +108,7 @@ Every huge milestone, we add something new. We just hit **100 stars!**
   - Auto-generate blog titles using extractive summarization — the most repeated, most representative content becomes the headline
   - Publish as plain .txt files
 - 50-star celebration banner on CLI startup
-- `safeclaw blog` CLI subcommand
+- `safestclaw blog` CLI subcommand
 - Blog intent patterns in command parser
 - Next milestone (100 stars) noted in CLI banner and README
 
@@ -155,7 +155,7 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 ## [0.1.4] - 2026-02-17
 
 ### Added
-- Plugin system for extending SafeClaw (official + community plugin directories, auto-loading)
+- Plugin system for extending SafestClaw (official + community plugin directories, auto-loading)
 
 ## [0.1.3] - 2026-02-17
 
@@ -169,7 +169,7 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 ## [0.1.2] - 2026-02-17
 
 ### Added
-- `__main__.py` for `python -m safeclaw` support
+- `__main__.py` for `python -m safestclaw` support
 - Natural language understanding with user-learned patterns
 - Command chaining with pipes (`|`, `->`) and sequences (`;`, `and then`)
 
@@ -186,7 +186,7 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 ## [0.1.0] - 2026-02-17
 
 ### Added
-- Initial release of SafeClaw
+- Initial release of SafestClaw
 - Rule-based command parser (keyword, regex, fuzzy matching, dateparser)
 - Core actions: files, shell, summarize, crawl, reminder, briefing, news, email, calendar
 - Multi-channel support (CLI, Telegram, webhooks)

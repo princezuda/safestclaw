@@ -31,7 +31,7 @@ _SRC = Path(__file__).parent.parent / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-# ── Mock heavy optional deps before any SafeClaw import ──────────────────────
+# ── Mock heavy optional deps before any SafestClaw import ──────────────────────
 _mock_fp = MagicMock()
 _mock_fp.parse = MagicMock(return_value=MagicMock(entries=[]))
 sys.modules.setdefault("feedparser", _mock_fp)
@@ -69,9 +69,9 @@ _mock_rapidfuzz.fuzz = _mock_fuzz
 sys.modules["rapidfuzz"] = _mock_rapidfuzz
 sys.modules["rapidfuzz.fuzz"] = _mock_fuzz
 
-# ── Now import SafeClaw modules ───────────────────────────────────────────────
-from safeclaw.core.parser import CommandParser
-from safeclaw.core.blog_publisher import (
+# ── Now import SafestClaw modules ───────────────────────────────────────────────
+from safestclaw.core.parser import CommandParser
+from safestclaw.core.blog_publisher import (
     BlogPublisher, PublishTarget, PublishTargetType, PublishResult,
 )
 
@@ -86,7 +86,7 @@ def run(coro):
 
 def _make_blog_action(tmp_path: Path):
     """Return a BlogAction wired to a temp data dir."""
-    from safeclaw.actions.blog import BlogAction
+    from safestclaw.actions.blog import BlogAction
     action = BlogAction(blog_dir=tmp_path)
     # Override summarizer with a mock so tests don't need full NLP
     action.summarizer = MagicMock()
@@ -293,7 +293,7 @@ class TestCommandDetection(unittest.TestCase):
 class TestParseInlineTarget(unittest.TestCase):
 
     def _p(self, text):
-        from safeclaw.actions.blog import BlogAction
+        from safestclaw.actions.blog import BlogAction
         return BlogAction._parse_inline_target(text)
 
     # SFTP
@@ -403,7 +403,7 @@ class TestSessionStateMachine(unittest.TestCase):
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
-        from safeclaw.actions.blog import BlogAction
+        from safestclaw.actions.blog import BlogAction
         self.ba = _make_blog_action(self.tmp)
         self.user = "testuser"
 
@@ -417,7 +417,7 @@ class TestSessionStateMachine(unittest.TestCase):
         self.ba._clear_session(self.user)
 
     def test_session_roundtrip(self):
-        from safeclaw.actions.blog import SESSION_PENDING_PUBLISH
+        from safestclaw.actions.blog import SESSION_PENDING_PUBLISH
         self._set_session(SESSION_PENDING_PUBLISH, pending_title="My Title", target_label="wp-site")
         s = self._get_session()
         self.assertEqual(s["state"], SESSION_PENDING_PUBLISH)
@@ -425,14 +425,14 @@ class TestSessionStateMachine(unittest.TestCase):
         self.assertEqual(s["target_label"], "wp-site")
 
     def test_clear_session(self):
-        from safeclaw.actions.blog import SESSION_REVIEWING
+        from safestclaw.actions.blog import SESSION_REVIEWING
         self._set_session(SESSION_REVIEWING)
         self._clear()
         s = self._get_session()
         self.assertFalse(s.get("state"))
 
     def test_explicit_command_clears_session(self):
-        from safeclaw.actions.blog import SESSION_AWAITING_CHOICE
+        from safestclaw.actions.blog import SESSION_AWAITING_CHOICE
         self._set_session(SESSION_AWAITING_CHOICE)
         result = run(self.ba._handle_session(
             self._get_session(), "show blog", "show blog", self.user,
@@ -444,7 +444,7 @@ class TestSessionStateMachine(unittest.TestCase):
         self.assertFalse(self._get_session().get("state"))
 
     def test_awaiting_choice_unknown_input(self):
-        from safeclaw.actions.blog import SESSION_AWAITING_CHOICE
+        from safestclaw.actions.blog import SESSION_AWAITING_CHOICE
         self._set_session(SESSION_AWAITING_CHOICE)
         engine = MagicMock()
         result = run(self.ba._handle_session(
@@ -454,7 +454,7 @@ class TestSessionStateMachine(unittest.TestCase):
         self.assertIsNotNone(result)
 
     def test_pending_publish_confirm(self):
-        from safeclaw.actions.blog import SESSION_PENDING_PUBLISH
+        from safestclaw.actions.blog import SESSION_PENDING_PUBLISH
         # Write a draft
         _write_draft(self.ba, self.user, "[2024-01-01]\nHello world\n")
         # Set up publisher with a mock
@@ -471,7 +471,7 @@ class TestSessionStateMachine(unittest.TestCase):
         self.assertIn("Published", result)
 
     def test_pending_publish_cancel(self):
-        from safeclaw.actions.blog import SESSION_PENDING_PUBLISH
+        from safestclaw.actions.blog import SESSION_PENDING_PUBLISH
         self._set_session(SESSION_PENDING_PUBLISH, pending_title="Test")
         result = run(self.ba._handle_pending_publish(
             self._get_session(), "cancel", "cancel", self.user,
@@ -480,7 +480,7 @@ class TestSessionStateMachine(unittest.TestCase):
         self.assertFalse(self._get_session().get("state"))
 
     def test_pending_publish_change_title(self):
-        from safeclaw.actions.blog import SESSION_PENDING_PUBLISH
+        from safestclaw.actions.blog import SESSION_PENDING_PUBLISH
         self._set_session(SESSION_PENDING_PUBLISH, pending_title="Old Title", target_label=None)
         result = run(self.ba._handle_pending_publish(
             self._get_session(), "title My New Post Title", "title my new post title", self.user,
@@ -492,7 +492,7 @@ class TestSessionStateMachine(unittest.TestCase):
         self.assertEqual(s["pending_title"], "My New Post Title")
 
     def test_pending_publish_change_title_with_change_prefix(self):
-        from safeclaw.actions.blog import SESSION_PENDING_PUBLISH
+        from safestclaw.actions.blog import SESSION_PENDING_PUBLISH
         self._set_session(SESSION_PENDING_PUBLISH, pending_title="Old Title", target_label=None)
         result = run(self.ba._handle_pending_publish(
             self._get_session(),
@@ -503,7 +503,7 @@ class TestSessionStateMachine(unittest.TestCase):
         self.assertIn("The Science of Coffee", result)
 
     def test_pending_publish_looks_like_command_clears(self):
-        from safeclaw.actions.blog import SESSION_PENDING_PUBLISH
+        from safestclaw.actions.blog import SESSION_PENDING_PUBLISH
         self._set_session(SESSION_PENDING_PUBLISH, pending_title="Test")
         result = run(self.ba._handle_pending_publish(
             self._get_session(), "show blog", "show blog", self.user,
@@ -513,7 +513,7 @@ class TestSessionStateMachine(unittest.TestCase):
         self.assertFalse(self._get_session().get("state"))
 
     def test_pending_publish_unrecognised_input(self):
-        from safeclaw.actions.blog import SESSION_PENDING_PUBLISH
+        from safestclaw.actions.blog import SESSION_PENDING_PUBLISH
         self._set_session(SESSION_PENDING_PUBLISH, pending_title="My Draft")
         result = run(self.ba._handle_pending_publish(
             self._get_session(),
@@ -525,7 +525,7 @@ class TestSessionStateMachine(unittest.TestCase):
         self.assertIn("My Draft", result)
 
     def test_pending_publish_all_confirm_words(self):
-        from safeclaw.actions.blog import SESSION_PENDING_PUBLISH
+        from safestclaw.actions.blog import SESSION_PENDING_PUBLISH
         _write_draft(self.ba, self.user, "[2024-01-01]\nContent here\n")
         mock_result = PublishResult(success=True, target_label="t", target_type="api",
                                     message="ok", url="")
@@ -540,7 +540,7 @@ class TestSessionStateMachine(unittest.TestCase):
             self.assertIn("Blog Published", result, f"word={word!r}")
 
     def test_pending_publish_all_cancel_words(self):
-        from safeclaw.actions.blog import SESSION_PENDING_PUBLISH
+        from safestclaw.actions.blog import SESSION_PENDING_PUBLISH
         for word in ("no", "abort", "stop", "back", "nevermind"):
             self._set_session(SESSION_PENDING_PUBLISH, pending_title="T")
             result = run(self.ba._handle_pending_publish(
@@ -707,7 +707,7 @@ class TestPublishRemoteFlow(unittest.TestCase):
         self.assertIn("Title", result)
 
     def test_sets_pending_publish_session(self):
-        from safeclaw.actions.blog import SESSION_PENDING_PUBLISH
+        from safestclaw.actions.blog import SESSION_PENDING_PUBLISH
         _write_draft(self.ba, self.user, "[2024-01-01]\nContent\n")
         run(self.ba._publish_remote("publish blog to wp://site.com admin pass", self.user))
         s = self.ba._get_session(self.user)
@@ -1055,14 +1055,14 @@ class TestMultiUserIsolation(unittest.TestCase):
         self.ba = _make_blog_action(self.tmp)
 
     def test_separate_sessions(self):
-        from safeclaw.actions.blog import SESSION_REVIEWING, SESSION_AWAITING_TOPIC
+        from safestclaw.actions.blog import SESSION_REVIEWING, SESSION_AWAITING_TOPIC
         self.ba._set_session("alice", SESSION_REVIEWING)
         self.ba._set_session("bob", SESSION_AWAITING_TOPIC)
         self.assertEqual(self.ba._get_session("alice")["state"], SESSION_REVIEWING)
         self.assertEqual(self.ba._get_session("bob")["state"], SESSION_AWAITING_TOPIC)
 
     def test_clear_one_preserves_other(self):
-        from safeclaw.actions.blog import SESSION_REVIEWING
+        from safestclaw.actions.blog import SESSION_REVIEWING
         self.ba._set_session("alice", SESSION_REVIEWING)
         self.ba._set_session("bob", SESSION_REVIEWING)
         self.ba._clear_session("alice")
@@ -1079,7 +1079,7 @@ class TestMultiUserIsolation(unittest.TestCase):
         self.assertIn("Bob", bob_path.read_text())
 
     def test_session_keyed_by_user_id(self):
-        from safeclaw.actions.blog import SESSION_PENDING_PUBLISH
+        from safestclaw.actions.blog import SESSION_PENDING_PUBLISH
         self.ba._set_session("user-A", SESSION_PENDING_PUBLISH, pending_title="Post A")
         self.ba._set_session("user-B", SESSION_PENDING_PUBLISH, pending_title="Post B")
         self.assertEqual(self.ba._get_session("user-A")["pending_title"], "Post A")
@@ -1282,14 +1282,14 @@ class TestExecuteRouting(unittest.TestCase):
         self.assertIsInstance(result, str)
 
     def test_session_state_intercepts_input(self):
-        from safeclaw.actions.blog import SESSION_AWAITING_CHOICE
+        from safestclaw.actions.blog import SESSION_AWAITING_CHOICE
         self.ba._set_session(self.user, SESSION_AWAITING_CHOICE)
         result = self._exec("1")
         # Should be handled by _handle_choice, not fall-through
         self.assertIsNotNone(result)
 
     def test_explicit_command_during_session_clears_it(self):
-        from safeclaw.actions.blog import SESSION_AWAITING_CHOICE
+        from safestclaw.actions.blog import SESSION_AWAITING_CHOICE
         self.ba._set_session(self.user, SESSION_AWAITING_CHOICE)
         result = self._exec("show blog")
         # show blog should route normally (not as session choice)
