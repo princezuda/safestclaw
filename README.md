@@ -1,17 +1,17 @@
-# SafeClaw 🐾
+# SafestClaw 🐾
 
 **The zero-cost alternative to OpenClaw. No LLM required, though it is optional. No required API bills. Minimal attack surface. Runs on any machine.**
 
 > **ONE HUNDRED STARS** — We hit ONE HUNDRED stars on GitHub! This milestone is our biggest update since our original release. It brings: **Real Research, Simple AI Setup, and Smart Learning.** Research now searches arXiv and Semantic Scholar for real academic papers, asks Wolfram Alpha for computational answers. `setup ai sk-ant-your-key` instantly configures Anthropic (or any provider) — or `setup ai local` for free Ollama. The parser auto-corrects typos, converts word-numbers ("one" → 1), and learns from your mistakes automatically. [See the new features below.](#-real-research-sources) Previous milestone: [Fuzzy Learning & Personalization.](#-writing-style-profiler)
-While OpenClaw users are burning [$200/day](https://www.notebookcheck.net/Free-to-use-AI-tool-can-burn-through-hundreds-of-Dollars-per-day-OpenClaw-has-absurdly-high-token-use.1219925.0.html) and [$3,600/month](https://dev.to/thegdsks/i-tried-the-free-ai-agent-with-124k-github-stars-heres-my-500-reality-check-2885) on API tokens, SafeClaw delivers 90% of the functionality using traditional programming — rule-based parsing, ML pipelines, and local-first tools. **Your API bill: $0. Forever.** If you choose to use the language models for blogging, coding and research, then yeah, you'll have a bill, but you can also do all of that without a language model on safeclaw. We simply provide both options. 
+While OpenClaw users are burning [$200/day](https://www.notebookcheck.net/Free-to-use-AI-tool-can-burn-through-hundreds-of-Dollars-per-day-OpenClaw-has-absurdly-high-token-use.1219925.0.html) and [$3,600/month](https://dev.to/thegdsks/i-tried-the-free-ai-agent-with-124k-github-stars-heres-my-500-reality-check-2885) on API tokens, SafestClaw delivers 90% of the functionality using traditional programming — rule-based parsing, ML pipelines, and local-first tools. **Your API bill: $0. Forever.** If you choose to use the language models for blogging, coding and research, then yeah, you'll have a bill, but you can also do all of that without a language model on safestclaw. We simply provide both options. 
 
-SafeClaw uses VADER, spaCy, sumy, YOLO, Whisper, Piper, and other battle-tested ML techniques instead of generative AI. The result: deterministic, predictable, private, and completely free to run.
+SafestClaw uses VADER, spaCy, sumy, YOLO, Whisper, Piper, and other battle-tested ML techniques instead of generative AI. The result: deterministic, predictable, private, and completely free to run.
 
 ---
 
-## Why SafeClaw?
+## Why SafestClaw?
 
-| | SafeClaw | OpenClaw |
+| | SafestClaw | OpenClaw |
 |---|---|---|
 | **Monthly cost by default** | **$0** | $100–$3,600+ | 
 | **Requires LLM** | No (optional for AI blogging, coding, and research all have no LLM options) | yes 
@@ -22,9 +22,9 @@ SafeClaw uses VADER, spaCy, sumy, YOLO, Whisper, Piper, and other battle-tested 
 | **Privacy** | **Local by default** (external only when you ask or setup an llm, e.g. weather) | Data always sent to API providers |
 
 
-## Full Comparison: SafeClaw vs OpenClaw
+## Full Comparison: SafestClaw vs OpenClaw
 
-| Feature | SafeClaw | OpenClaw |
+| Feature | SafestClaw | OpenClaw |
 |---|---|---|
 | Self-hosted | ✅ | ✅ |
 | Cross-platform (Linux, macOS, Windows) | ✅ | ✅ |
@@ -76,7 +76,7 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 ### 🗣️ Voice Control
 * **Speech-to-Text** — Whisper STT runs locally, no cloud transcription
 * **Text-to-Speech** — Piper TTS for natural voice output, completely offline
-* **Voice-first workflow** — Talk to SafeClaw like you would any assistant
+* **Voice-first workflow** — Talk to SafestClaw like you would any assistant
 
 ### 🏠 Smart Home & Device Control
 * **Smart home integration** — Control your connected devices
@@ -158,16 +158,16 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 
 ### 🤖 Super Simple AI Setup
 * **Just enter your key** — `setup ai sk-ant-your-key` and you're done. Auto-detects Anthropic, OpenAI, Google, Groq
-* **Or go local** — `setup ai local` auto-installs Ollama, downloads a model, configures SafeClaw
+* **Or go local** — `setup ai local` auto-installs Ollama, downloads a model, configures SafestClaw
 * **Model presets** — `setup ai local small` (1.3GB), `setup ai local coding`, `setup ai local writing`
 * **Status check** — `setup ai status` shows what's configured
 * **Zero config files** — No YAML editing needed, the command does it for you
 
 ### 🧠 Smart Input Learning
-* **Word-to-number** — Type "research select one two three" and SafeClaw understands "1 2 3"
+* **Word-to-number** — Type "research select one two three" and SafestClaw understands "1 2 3"
 * **Typo auto-correction** — "remaind me" → "remind me", "summerize" → "summarize"
 * **Shorthand** — "tmrw" → "tomorrow", "hrs" → "hours", "mins" → "minutes"
-* **Auto-learns from mistakes** — If a command fails and you retype it correctly, SafeClaw remembers the mapping for next time
+* **Auto-learns from mistakes** — If a command fails and you retype it correctly, SafestClaw remembers the mapping for next time
 * **No AI needed** — All corrections are rule-based and deterministic
 
 ### 💬 Optional LLM Command Understanding (NLU)
@@ -184,14 +184,14 @@ put a 9am reminder tomorrow: dentist call
 ```
 
 The NLU bridge uses your configured LLM (any provider) as a **pure translator**:
-it converts what you typed into the closest matching SafeClaw command string,
+it converts what you typed into the closest matching SafestClaw command string,
 which then goes through the same rule-based parser as always. The LLM never
 executes anything directly — it only re-words your input.
 
 Enable in `config/config.yaml`:
 
 ```yaml
-safeclaw:
+safestclaw:
   nlu:
     enabled: true
     provider: my-claude        # optional — uses active provider if omitted
@@ -204,7 +204,7 @@ configured LLM provider. Recognised commands (the vast majority) are still
 handled entirely locally with zero tokens consumed.
 
 ### ✍️ Writing Style Profiler
-* **Learn your voice** — Feed SafeClaw your writing and it builds a 35-metric profile (sentence length, vocabulary, formality, contractions, structure, favorite words, etc.)
+* **Learn your voice** — Feed SafestClaw your writing and it builds a 35-metric profile (sentence length, vocabulary, formality, contractions, structure, favorite words, etc.)
 * **Persistent memory** — Your profile is stored in SQLite and improves with every sample
 * **LLM prompt generation** — Profile converts to writing style instructions for any LLM provider
 * **No AI required** — All analysis uses NLTK, VADER, and statistical methods locally
@@ -266,8 +266,8 @@ handled entirely locally with zero tokens consumed.
 
 ## Installation
 
-> **Heads up — name collision on PyPI.** The `safeclaw` name on PyPI is held by
-> an unrelated project. Running `pip install safeclaw` or `pipx install safeclaw`
+> **Heads up — name collision on PyPI.** The `safestclaw` name on PyPI is held by
+> an unrelated project. Running `pip install safestclaw` or `pipx install safestclaw`
 > will install that other package and crash with `ModuleNotFoundError: No module
 > named 'fcntl'` on Windows (issue #33). Install from this Git repo instead, as
 > shown below.
@@ -286,8 +286,8 @@ python -m pipx ensurepath
 
 pipx ensurepath
 
-# Install SafeClaw from this repo
-pipx install git+https://github.com/princezuda/safeclaw.git
+# Install SafestClaw from this repo
+pipx install git+https://github.com/princezuda/safestclaw.git
 ```
 
 ### Using pip with virtual environment
@@ -295,27 +295,27 @@ pipx install git+https://github.com/princezuda/safeclaw.git
 ```bash
 # Create and activate venv
 # Linux/macOS:
-python3 -m venv ~/.safeclaw-venv
-source ~/.safeclaw-venv/bin/activate
+python3 -m venv ~/.safestclaw-venv
+source ~/.safestclaw-venv/bin/activate
 # Windows (PowerShell):
-python -m venv $HOME\.safeclaw-venv
-$HOME\.safeclaw-venv\Scripts\Activate.ps1
+python -m venv $HOME\.safestclaw-venv
+$HOME\.safestclaw-venv\Scripts\Activate.ps1
 
-# Install SafeClaw from this repo
-pip install git+https://github.com/princezuda/safeclaw.git
+# Install SafestClaw from this repo
+pip install git+https://github.com/princezuda/safestclaw.git
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/princezuda/safeclaw.git
-cd safeclaw
+git clone https://github.com/princezuda/safestclaw.git
+cd safestclaw
 pip install -e .
 ```
 
 ### Optional ML Features
 
-Install extras the same way — replace `safeclaw` with the git URL or use the
+Install extras the same way — replace `safestclaw` with the git URL or use the
 local checkout:
 
 ```bash
@@ -326,7 +326,7 @@ pip install -e ".[ocr]"     # OCR only (needs Tesseract)
 pip install -e ".[ml]"      # all ML extras
 
 # Or directly from GitHub
-pipx install "git+https://github.com/princezuda/safeclaw.git#egg=safeclaw[ml]"
+pipx install "git+https://github.com/princezuda/safestclaw.git#egg=safestclaw[ml]"
 ```
 
 **Requirements:** Python 3.11+, ~50MB disk (base), ~2GB additional for vision features. Runs on Linux, macOS, and Windows.
@@ -337,10 +337,10 @@ pipx install "git+https://github.com/princezuda/safeclaw.git#egg=safeclaw[ml]"
 
 ```bash
 # Start interactive mode
-safeclaw
+safestclaw
 
 # Or with verbose logging
-safeclaw --verbose
+safestclaw --verbose
 ```
 
 ### Example Commands
@@ -369,7 +369,7 @@ safeclaw --verbose
 > ai rewrite blog                   # AI polishes your draft
 > publish blog to wp://mysite.com admin pass  # Publish inline — no config needed
 > publish blog to my-wordpress               # Or use a saved target from config
-> style learn I write concise, punchy posts.        # Teach SafeClaw your style
+> style learn I write concise, punchy posts.        # Teach SafestClaw your style
 > style profile                     # View your writing profile
 > research WebAssembly performance  # Search arXiv + Scholar + Wolfram
 > research arxiv quantum computing  # Search arXiv papers directly
@@ -392,43 +392,43 @@ safeclaw --verbose
 
 ```bash
 # News
-safeclaw news                       # Headlines from enabled categories
-safeclaw news tech                  # Tech news only
-safeclaw news --categories          # List all categories
-safeclaw news world -n 20           # 20 world news headlines
-safeclaw news --add https://blog.example.com/rss --name "My Blog"
-safeclaw news -s                    # With auto-summarization
+safestclaw news                       # Headlines from enabled categories
+safestclaw news tech                  # Tech news only
+safestclaw news --categories          # List all categories
+safestclaw news world -n 20           # 20 world news headlines
+safestclaw news --add https://blog.example.com/rss --name "My Blog"
+safestclaw news -s                    # With auto-summarization
 
 # Summarize
-safeclaw summarize https://example.com/article -n 5
+safestclaw summarize https://example.com/article -n 5
 
 # Crawl
-safeclaw crawl https://example.com --depth 2
+safestclaw crawl https://example.com --depth 2
 
 # Text analysis
-safeclaw analyze "This product is amazing! I love it."
-safeclaw analyze document.txt --no-readability
+safestclaw analyze "This product is amazing! I love it."
+safestclaw analyze document.txt --no-readability
 
 # Documents
-safeclaw document report.pdf
-safeclaw document paper.docx --summarize -n 5
-safeclaw document notes.md --output extracted.txt
+safestclaw document report.pdf
+safestclaw document paper.docx --summarize -n 5
+safestclaw document notes.md --output extracted.txt
 
 # Calendar
-safeclaw calendar import --file calendar.ics
-safeclaw calendar today
-safeclaw calendar upcoming --days 14
+safestclaw calendar import --file calendar.ics
+safestclaw calendar today
+safestclaw calendar upcoming --days 14
 
 # Blog — Deterministic (no AI)
-safeclaw blog help                 # Blog feature guide
-safeclaw blog write "New crawling features shipped today."
-safeclaw blog show                 # View draft and published posts
-safeclaw blog title                # Generate title from entries
-safeclaw blog publish              # Save blog as .txt
-safeclaw blog publish "My Custom Title"  # Publish with custom title
+safestclaw blog help                 # Blog feature guide
+safestclaw blog write "New crawling features shipped today."
+safestclaw blog show                 # View draft and published posts
+safestclaw blog title                # Generate title from entries
+safestclaw blog publish              # Save blog as .txt
+safestclaw blog publish "My Custom Title"  # Publish with custom title
 
 # Blog — AI-powered (requires ai_providers in config)
-safeclaw blog                      # Interactive menu (AI or manual)
+safestclaw blog                      # Interactive menu (AI or manual)
 # ai blog generate about <topic>   # AI writes a full blog post
 # ai rewrite blog                  # AI polishes your draft
 # ai expand blog                   # AI makes it longer
@@ -441,57 +441,57 @@ safeclaw blog                      # Interactive menu (AI or manual)
 # set front page 123 on my-wp     # Set home page on a target
 
 # Writing Style
-safeclaw style learn "I write short, punchy sentences. No fluff."
-safeclaw style profile             # View your writing profile
+safestclaw style learn "I write short, punchy sentences. No fluff."
+safestclaw style profile             # View your writing profile
 
 # Research (arXiv, Semantic Scholar, Wolfram Alpha)
-safeclaw research "quantum computing"       # Search all sources
-safeclaw research arxiv "transformer models" # arXiv papers
-safeclaw research scholar "deep learning"   # Semantic Scholar
-safeclaw research wolfram "integrate x^2"   # Wolfram Alpha
-safeclaw research sources          # View gathered sources
-safeclaw research select 1,2,3     # Pick sources for deep analysis
-safeclaw research analyze          # LLM deep dive (optional)
+safestclaw research "quantum computing"       # Search all sources
+safestclaw research arxiv "transformer models" # arXiv papers
+safestclaw research scholar "deep learning"   # Semantic Scholar
+safestclaw research wolfram "integrate x^2"   # Wolfram Alpha
+safestclaw research sources          # View gathered sources
+safestclaw research select 1,2,3     # Pick sources for deep analysis
+safestclaw research analyze          # LLM deep dive (optional)
 
 # AI Setup (super simple)
-safeclaw setup ai sk-ant-your-key  # Enter Anthropic key, done
-safeclaw setup ai sk-your-key      # Or OpenAI key
-safeclaw setup ai local            # Or auto-install Ollama (free)
-safeclaw setup ai local coding     # Install coding-optimized model
-safeclaw setup ai status           # Check your setup
+safestclaw setup ai sk-ant-your-key  # Enter Anthropic key, done
+safestclaw setup ai sk-your-key      # Or OpenAI key
+safestclaw setup ai local            # Or auto-install Ollama (free)
+safestclaw setup ai local coding     # Install coding-optimized model
+safestclaw setup ai status           # Check your setup
 
 # Coding Toolbox
-safeclaw code templates            # List available templates
-safeclaw code template python-class UserAuth "Auth handler"
-safeclaw code stats src/           # Lines of code by language
-safeclaw code search "TODO" src/   # Regex search code files
-safeclaw code regex "\d{3}-\d{4}" test "555-1234"
-safeclaw code diff file1.py file2.py
+safestclaw code templates            # List available templates
+safestclaw code template python-class UserAuth "Auth handler"
+safestclaw code stats src/           # Lines of code by language
+safestclaw code search "TODO" src/   # Regex search code files
+safestclaw code regex "\d{3}-\d{4}" test "555-1234"
+safestclaw code diff file1.py file2.py
 
 # Auto Blog
-safeclaw auto blog setup           # Interactive setup wizard
-safeclaw auto blog list            # View scheduled auto-blogs
-safeclaw auto blog remove my-blog  # Remove a schedule
+safestclaw auto blog setup           # Interactive setup wizard
+safestclaw auto blog list            # View scheduled auto-blogs
+safestclaw auto blog remove my-blog  # Remove a schedule
 
 # Flow
-safeclaw flow                      # Architecture diagram
+safestclaw flow                      # Architecture diagram
 
 # Webhooks
-safeclaw webhook --port 8765
+safestclaw webhook --port 8765
 
 # Initialize config
-safeclaw init
+safestclaw init
 ```
 
 ---
 
 ## Configuration
 
-SafeClaw looks for configuration in `config/config.yaml`:
+SafestClaw looks for configuration in `config/config.yaml`:
 
 ```yaml
-safeclaw:
-  name: "SafeClaw"
+safestclaw:
+  name: "SafestClaw"
   language: "en"
   timezone: "UTC"
 
@@ -522,7 +522,7 @@ actions:
 
 ### Writing Style Profiler
 
-SafeClaw learns how you write by analyzing text samples. It builds a statistical profile — no AI needed.
+SafestClaw learns how you write by analyzing text samples. It builds a statistical profile — no AI needed.
 
 ```
 > style learn I've been thinking about this for a while. The tech industry
@@ -549,7 +549,7 @@ Your profile persists across sessions and automatically shapes AI blog prompts s
 
 | Command | Description |
 |---|---|
-| `style learn <text>` | Feed SafeClaw a writing sample |
+| `style learn <text>` | Feed SafestClaw a writing sample |
 | `style profile` | View your current writing profile |
 
 ### Research Pipeline
@@ -658,11 +658,11 @@ Run `show me the flow` to see the full architecture diagram.
 
 ## Blogging Guide
 
-SafeClaw has two blogging modes. You can use either or both.
+SafestClaw has two blogging modes. You can use either or both.
 
 ### Mode 1: Deterministic Blog (No AI)
 
-Write entries manually, crawl websites for content, and let SafeClaw generate titles using extractive summarization (LexRank, TextRank, LSA, Luhn). No API keys, no cost, fully offline.
+Write entries manually, crawl websites for content, and let SafestClaw generate titles using extractive summarization (LexRank, TextRank, LSA, Luhn). No API keys, no cost, fully offline.
 
 **Setup:** None — works out of the box.
 
@@ -946,11 +946,11 @@ publish_targets:
 
 ## Architecture
 
-> Tip: Run `show me the flow` or `flow` inside SafeClaw to see the full interactive architecture diagram.
+> Tip: Run `show me the flow` or `flow` inside SafestClaw to see the full interactive architecture diagram.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
-│                               SAFECLAW                                    │
+│                               SAFESTCLAW                                  │
 ├───────────────────────────────────────────────────────────────────────────┤
 │                                                                           │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐  ┌────────────┐       │
@@ -1001,7 +1001,7 @@ publish_targets:
 
 ### Command Parsing
 
-Instead of burning tokens on LLMs, SafeClaw uses:
+Instead of burning tokens on LLMs, SafestClaw uses:
 
 1. **Keyword matching** — Fast lookup of command keywords
 2. **Regex patterns** — Structured extraction of parameters
@@ -1049,12 +1049,12 @@ Async crawling with httpx + BeautifulSoup:
 
 ---
 
-## Extending SafeClaw
+## Extending SafestClaw
 
 ### Custom Actions
 
 ```python
-from safeclaw.actions.base import BaseAction
+from safestclaw.actions.base import BaseAction
 
 class MyAction(BaseAction):
     name = "myaction"
@@ -1087,7 +1087,7 @@ intents:
 Plugins are automatically loaded from the plugins directory:
 
 ```
-src/safeclaw/plugins/
+src/safestclaw/plugins/
 ├── official/          # Curated, tested plugins
 │   └── smarthome.py
 ├── community/         # User-contributed plugins
@@ -1098,9 +1098,9 @@ src/safeclaw/plugins/
 
 ---
 
-## Who Is SafeClaw For?
+## Who Is SafestClaw For?
 
-**SafeClaw is for you if:**
+**SafestClaw is for you if:**
 * You want automation without API bills
 * You're tired of unpredictable OpenClaw costs
 * Privacy matters to you — your data stays local by default
@@ -1127,8 +1127,8 @@ src/safeclaw/plugins/
 
 ```bash
 # Clone the repo
-git clone https://github.com/princezuda/safeclaw.git
-cd safeclaw
+git clone https://github.com/princezuda/safestclaw.git
+cd safestclaw
 
 # Install dev dependencies
 pip install -e ".[dev]"
@@ -1137,10 +1137,10 @@ pip install -e ".[dev]"
 pytest
 
 # Type checking
-mypy src/safeclaw
+mypy src/safestclaw
 
 # Linting
-ruff check src/safeclaw
+ruff check src/safestclaw
 ```
 
 ---
@@ -1184,7 +1184,7 @@ Contributions welcome! Areas we'd love help with:
 
 ---
 
-**SafeClaw** — Because your assistant shouldn't cost more than your rent. 🐾
+**SafestClaw** — Because your assistant shouldn't cost more than your rent. 🐾
 
 
 

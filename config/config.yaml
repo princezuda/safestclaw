@@ -1,7 +1,7 @@
-# SafeClaw Configuration
+# SafestClaw Configuration
 
-safeclaw:
-  name: "SafeClaw"
+safestclaw:
+  name: "SafestClaw"
   language: "en"
   # Multilingual command understanding (deterministic, no AI).
   # Set a single language above, or list multiple below.
@@ -12,7 +12,7 @@ safeclaw:
 
   # Optional: LLM-assisted Natural Language Understanding (NLU)
   # When enabled, commands that can't be matched by the rule-based parser
-  # are sent to an LLM which translates them into the closest SafeClaw
+  # are sent to an LLM which translates them into the closest SafestClaw
   # command. The translated string still goes through the same parser —
   # the LLM never executes anything directly.
   # Requires at least one entry under ai_providers below.

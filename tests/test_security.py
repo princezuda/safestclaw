@@ -1,7 +1,7 @@
 """Tests for security-critical components.
 
 These tests import modules directly to avoid triggering the full
-safeclaw import chain which requires all dependencies.
+safestclaw import chain which requires all dependencies.
 """
 
 import asyncio
@@ -37,12 +37,12 @@ class TestShellValidation:
     def _load_shell(self):
         # We need the base action class first
         base_mod = _load_module(
-            "safeclaw.actions.base",
-            SRC / "safeclaw" / "actions" / "base.py",
+            "safestclaw.actions.base",
+            SRC / "safestclaw" / "actions" / "base.py",
         )
         self._shell_mod = _load_module(
-            "safeclaw.actions.shell",
-            SRC / "safeclaw" / "actions" / "shell.py",
+            "safestclaw.actions.shell",
+            SRC / "safestclaw" / "actions" / "shell.py",
         )
 
     def _get_shell(self, **kwargs):
@@ -124,8 +124,8 @@ class TestSSRFProtection:
     @pytest.fixture(autouse=True)
     def _load_crawler(self):
         self._mod = _load_module(
-            "safeclaw.core.crawler",
-            SRC / "safeclaw" / "core" / "crawler.py",
+            "safestclaw.core.crawler",
+            SRC / "safestclaw" / "core" / "crawler.py",
         )
 
     def test_blocks_localhost(self):
@@ -180,8 +180,8 @@ class TestDocumentSecurity:
     @pytest.fixture(autouse=True)
     def _load_docs(self):
         self._mod = _load_module(
-            "safeclaw.core.documents",
-            SRC / "safeclaw" / "core" / "documents.py",
+            "safestclaw.core.documents",
+            SRC / "safestclaw" / "core" / "documents.py",
         )
 
     def test_blocks_etc_passwd(self):
