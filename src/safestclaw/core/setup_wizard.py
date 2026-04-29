@@ -26,7 +26,6 @@ from safestclaw.core.llm_installer import (
     CLOUD_PROVIDERS,
     LOCAL_MODELS,
     _detect_provider,
-    _update_config,
     is_ollama_installed,
     is_ollama_running,
     setup_local,
