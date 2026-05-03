@@ -199,6 +199,11 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **Subfolder per site** — `sftp_subfolder: "blog"` (or set inline with `subfolder=blog/posts` on the setup command) so each post uploads to `{remote_path}/{subfolder}/<slug>.html`
 * **Repeat last publish** — `publish blog again` or `publish blog to here` reuses the last successful target, no retyping
 
+### 🤝 LLM Cascade with ML Fallback
+* **Provider cascade** — bad API key / quota / rate-limit / network failure on one provider auto-falls-through to the next configured one (cloud first, local last)
+* **Last-resort ML fallback** — when every LLM provider is unreachable, AI blog `rewrite` / `expand` / `headlines` use the deterministic ML stack (sumy summarisation + keyword heuristics) so you still get useful output
+* **Clear banner** — fallback responses are prefixed with `_(falling back to local ML)_` plus the original error so you know exactly what happened
+
 ### 🛠️ First-Run Setup, Anywhere
 * **Same walkthrough in every channel** — CLI, web UI, Telegram all guide first-time users through local-only / cloud / hybrid / skip
 * **Conversational** — type a number or `skip`; no rich prompts that only work in a TTY

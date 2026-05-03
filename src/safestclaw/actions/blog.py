@@ -829,7 +829,27 @@ class BlogAction(BaseAction):
         response = await self.ai_writer.rewrite_blog(content)
 
         if response.error:
-            return f"AI rewrite failed: {response.error}"
+            # Cascade exhausted every configured provider — fall back to
+            # local ML so the user gets *something* useful instead of an
+            # error wall.
+            from safestclaw.core.ml_fallback import (
+                fallback_rewrite,
+                offline_ml_banner,
+            )
+            new_content = fallback_rewrite(content)
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+            new_draft = f"[{timestamp}] ML-rewritten (offline fallback)\n{new_content}\n"
+            draft_path.write_text(new_draft)
+            preview = new_content[:500] + (
+                "..." if len(new_content) > 500 else ""
+            )
+            return (
+                offline_ml_banner(f"AI rewrite failed: {response.error}")
+                + f"Blog draft rewritten by local ML.\n\n"
+                f"Preview:\n{preview}\n\n"
+                f"Use 'publish blog' to save locally or 'publish blog to "
+                f"<target>' to publish."
+            )
 
         # Replace draft content
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -863,7 +883,23 @@ class BlogAction(BaseAction):
         response = await self.ai_writer.expand_blog(content)
 
         if response.error:
-            return f"AI expand failed: {response.error}"
+            from safestclaw.core.ml_fallback import (
+                fallback_expand,
+                offline_ml_banner,
+            )
+            new_content = fallback_expand(content)
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+            draft_path.write_text(
+                f"[{timestamp}] ML-expanded (offline fallback)\n{new_content}\n"
+            )
+            return (
+                offline_ml_banner(f"AI expand failed: {response.error}")
+                + f"Blog draft expanded by local ML.\n\n"
+                f"Preview:\n{new_content[:500]}"
+                + ("..." if len(new_content) > 500 else "")
+                + "\n\nUse 'publish blog' to save or 'publish blog to "
+                "<target>' to publish."
+            )
 
         # Replace draft content
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -893,7 +929,19 @@ class BlogAction(BaseAction):
         response = await self.ai_writer.generate_headlines(content)
 
         if response.error:
-            return f"AI headline generation failed: {response.error}"
+            from safestclaw.core.ml_fallback import (
+                fallback_headlines,
+                offline_ml_banner,
+            )
+            return (
+                offline_ml_banner(
+                    f"AI headlines failed: {response.error}"
+                )
+                + "**Local headline candidates**\n\n"
+                + fallback_headlines(content)
+                + "\n\nUse 'publish blog <Your Chosen Title>' to publish "
+                "with a title."
+            )
 
         return (
             f"**AI-Generated Headlines**\n"

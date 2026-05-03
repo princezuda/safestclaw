@@ -153,6 +153,57 @@ class AIResponse:
     model: str
     tokens_used: int = 0
     error: str = ""
+    # Classified error kind so callers can decide whether to retry with
+    # another provider, fall back to ML, or give up. One of:
+    #   "" (no error)
+    #   "auth"        — bad/expired key (401, "invalid_api_key")
+    #   "quota"       — over budget / no credits (403, "insufficient_quota")
+    #   "rate_limit"  — too many requests (429)
+    #   "server"      — provider 5xx
+    #   "network"     — connection-shaped failure
+    #   "other"       — anything else
+    error_kind: str = ""
+
+    @property
+    def success(self) -> bool:
+        return not self.error and bool(self.content)
+
+
+def classify_http_error(status_code: int, body: str = "") -> str:
+    """Map an HTTP status code (and optional response body) to one of
+    the AIResponse.error_kind values."""
+    body_lower = (body or "").lower()
+    if status_code in (401,):
+        return "auth"
+    if status_code in (403,):
+        # Some providers return 403 for both auth and quota — check body.
+        if any(s in body_lower for s in (
+            "quota", "credit", "billing", "insufficient",
+        )):
+            return "quota"
+        return "auth"
+    if status_code in (402, 429):
+        return "rate_limit" if status_code == 429 else "quota"
+    if 500 <= status_code < 600:
+        return "server"
+    return "other"
+
+
+def classify_exception_kind(exc: BaseException) -> str:
+    """Best-effort classifier for non-HTTP exceptions raised by an
+    LLM call (httpx ConnectError, asyncio TimeoutError, etc.)."""
+    name = type(exc).__name__
+    if name.startswith(("Connect", "Read", "Network", "Pool", "Remote")):
+        return "network"
+    if isinstance(exc, (TimeoutError, ConnectionError, OSError)):
+        return "network"
+    return "other"
+
+
+# Errors that justify trying another provider before giving up.
+_RETRYABLE_KINDS: frozenset[str] = frozenset({
+    "auth", "quota", "rate_limit", "server", "network",
+})
 
 
 @dataclass
@@ -282,15 +333,12 @@ class AIWriter:
         """
         Generate text using the specified or active AI provider.
 
-        Args:
-            prompt: The user prompt / content request
-            provider_label: Specific provider to use (or active if None)
-            system_prompt: System-level instructions
-            temperature: Override provider default temperature
-            max_tokens: Override provider default max_tokens
-
-        Returns:
-            AIResponse with generated content
+        On retryable failures (auth, quota, rate-limit, server, network)
+        the call cascades through the rest of the configured providers
+        — local Ollama / LM Studio etc. preferred last so we exhaust
+        cloud options before falling back. The final response keeps the
+        last error_kind so callers can decide whether to fall back to
+        deterministic ML helpers.
         """
         label = provider_label or self._active_provider
         if not label or label not in self.providers:
@@ -299,17 +347,68 @@ class AIWriter:
                 provider="none",
                 model="",
                 error="No AI provider configured. Add one in config/config.yaml under ai_providers.",
+                error_kind="auth",
             )
 
-        config = self.providers[label]
-        if not config.enabled:
+        # Build the cascade order: caller's first, then any other
+        # enabled providers, with local providers last (most likely to
+        # work even when cloud is failing for credit/auth reasons).
+        order = [label] + [
+            other for other in self._cascade_order() if other != label
+        ]
+
+        last: AIResponse | None = None
+        for try_label in order:
+            cfg = self.providers.get(try_label)
+            if cfg is None or not cfg.enabled:
+                continue
+            response = await self._generate_once(
+                cfg, prompt, system_prompt, temperature, max_tokens,
+            )
+            if response.success:
+                if try_label != label and last is not None:
+                    logger.info(
+                        "AI provider cascade: '%s' (%s) → '%s' (%s)",
+                        label, last.error_kind, try_label, response.provider,
+                    )
+                return response
+            last = response
+            if response.error_kind not in _RETRYABLE_KINDS:
+                break
+
+        # Every configured provider failed.
+        if last is None:
             return AIResponse(
-                content="",
-                provider=config.provider.value,
-                model=config.model,
-                error=f"Provider '{label}' is disabled.",
+                content="", provider="none", model="",
+                error="No AI provider available.", error_kind="auth",
             )
+        return last
 
+    def _cascade_order(self) -> list[str]:
+        """Return provider labels ordered cloud-first then local. Local
+        providers go last because if a cloud provider's auth is failing
+        we still want to try the local one — but we shouldn't burn a
+        local round-trip when a cheaper cloud might work."""
+        local_kinds = {
+            AIProvider.OLLAMA, AIProvider.LM_STUDIO, AIProvider.LLAMACPP,
+            AIProvider.LOCALAI, AIProvider.JAN,
+        }
+        cloud, local = [], []
+        for label, cfg in self.providers.items():
+            if not cfg.enabled:
+                continue
+            (local if cfg.provider in local_kinds else cloud).append(label)
+        return cloud + local
+
+    async def _generate_once(
+        self,
+        config: AIProviderConfig,
+        prompt: str,
+        system_prompt: str,
+        temperature: float | None,
+        max_tokens: int | None,
+    ) -> AIResponse:
+        """Single-provider generate without cascade — used by ``generate``."""
         temp = temperature if temperature is not None else config.temperature
         tokens = max_tokens if max_tokens is not None else config.max_tokens
 
@@ -425,6 +524,7 @@ class AIWriter:
                 provider=config.provider.value,
                 model=config.model,
                 error=f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+                error_kind=classify_http_error(e.response.status_code, e.response.text),
             )
         except Exception as e:
             return AIResponse(
@@ -432,6 +532,7 @@ class AIWriter:
                 provider=config.provider.value,
                 model=config.model,
                 error=str(e),
+                error_kind=classify_exception_kind(e),
             )
 
     async def _call_anthropic(
@@ -481,6 +582,7 @@ class AIWriter:
                 provider="anthropic",
                 model=config.model,
                 error=f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+                error_kind=classify_http_error(e.response.status_code, e.response.text),
             )
         except Exception as e:
             return AIResponse(
@@ -488,6 +590,7 @@ class AIWriter:
                 provider="anthropic",
                 model=config.model,
                 error=str(e),
+                error_kind=classify_exception_kind(e),
             )
 
     async def _call_google(
@@ -533,6 +636,7 @@ class AIWriter:
                 provider="google",
                 model=config.model,
                 error=f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+                error_kind=classify_http_error(e.response.status_code, e.response.text),
             )
         except Exception as e:
             return AIResponse(
@@ -540,6 +644,7 @@ class AIWriter:
                 provider="google",
                 model=config.model,
                 error=str(e),
+                error_kind=classify_exception_kind(e),
             )
 
     async def _call_ollama(
@@ -596,6 +701,7 @@ class AIWriter:
                 provider="ollama",
                 model=config.model,
                 error=str(e),
+                error_kind=classify_exception_kind(e),
             )
 
     # ── Configuration loading ────────────────────────────────────────────────

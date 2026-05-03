@@ -9,6 +9,22 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 ## [Unreleased]
 
 ### Added
+- **AI provider cascade + local-ML fallback.** When an LLM call fails
+  (auth, quota, rate-limit, server, network), the configured providers
+  are tried in order — cloud first, then local Ollama / LM Studio /
+  llama.cpp / etc. last so we exhaust cheaper options before burning a
+  local round-trip.
+  - `AIResponse.error_kind` classifies failures
+    (`auth`/`quota`/`rate_limit`/`server`/`network`/`other`) so callers
+    can decide whether to retry or fall back.
+  - `AIWriter.generate` is now cascade-aware; the success path is
+    unchanged for callers.
+  - When **every** provider gives up, action callsites (currently AI
+    blog rewrite / expand / headlines) call into a new
+    `core/ml_fallback.py` module that produces useful output from the
+    deterministic ML stack (sumy summarisation, keyword-driven
+    headlines, etc.) and prepends a clear "_(falling back to local
+    ML)_" banner so the user knows what happened.
 - **First-run setup walkthrough in every channel.** Any user whose
   config doesn't have `safestclaw.setup_completed: true` is walked
   through setup conversationally on their next message — works in CLI,
