@@ -56,7 +56,7 @@ if TYPE_CHECKING:
 
 try:
     from fastapi import FastAPI, HTTPException, Request
-    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi.responses import HTMLResponse
     HAS_FASTAPI = True
 except ImportError:  # pragma: no cover - already a core dep, but be defensive
     FastAPI = None  # type: ignore[assignment]
@@ -327,7 +327,7 @@ class WebChannel(BaseChannel):
 
     def __init__(
         self,
-        engine: "SafestClaw",
+        engine: SafestClaw,
         host: str = "127.0.0.1",
         port: int = 8771,
         auth_token: str | None = None,
@@ -495,9 +495,9 @@ class WebChannel(BaseChannel):
     @classmethod
     def from_config(
         cls,
-        engine: "SafestClaw",
+        engine: SafestClaw,
         cfg: dict[str, Any] | None,
-    ) -> "WebChannel":
+    ) -> WebChannel:
         cfg = cfg or {}
         return cls(
             engine=engine,

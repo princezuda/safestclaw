@@ -754,7 +754,7 @@ async def _calendar(action: str, path: Path | None, days: int) -> None:
 
     def _print_events(events, title: str) -> None:
         if not events:
-            console.print(f"[yellow]No events found.[/yellow]")
+            console.print("[yellow]No events found.[/yellow]")
             return
         console.print(f"[bold]{title}[/bold]\n")
         current_date = None

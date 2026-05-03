@@ -42,7 +42,7 @@ DEFAULT_EXCLUDED_ACTIONS: frozenset[str] = frozenset({
 })
 
 
-def _action_description(name: str, engine: "SafestClaw") -> str:
+def _action_description(name: str, engine: SafestClaw) -> str:
     """Best-effort human-readable description for an MCP tool."""
     intents = getattr(engine.parser, "intents", {})
     pattern = intents.get(name)
@@ -53,7 +53,7 @@ def _action_description(name: str, engine: "SafestClaw") -> str:
 
 
 def build_mcp_server(
-    engine: "SafestClaw",
+    engine: SafestClaw,
     server_name: str = "safestclaw",
     exclude: set[str] | None = None,
 ) -> Any:
@@ -149,7 +149,7 @@ def build_mcp_server(
 
 
 async def serve_mcp(
-    engine: "SafestClaw",
+    engine: SafestClaw,
     transport: str = "stdio",
     host: str = "127.0.0.1",
     port: int = 8770,
