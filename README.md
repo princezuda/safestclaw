@@ -150,6 +150,14 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **Vision** — YOLO object detection + OCR (~2GB)
 * **OCR** — Tesseract text extraction from images (lightweight)
 
+### 🌐 Localhost Web UI
+* **Single-page chat** at `http://127.0.0.1:8771/` — no CDNs, no JS framework
+* **Drives the whole engine** — every action, every plugin, every command
+* **Loopback only** — `WebChannel` refuses non-127.0.0.1 binds at construction
+* **Optional auth** — Bearer token via `channels.web.auth_token`
+* **JSON API** — `/api/health`, `/api/actions`, `/api/help`, `/api/message`, `/api/history`
+* Run standalone: `safestclaw web` — or alongside other channels: `safestclaw run --web`
+
 ### 🛡️ Security Scanners (no AI)
 * **bandit, pip-audit, safety, semgrep, trivy, detect-secrets, gitleaks** — all optional, all auto-detected
 * `security tools` — see what's installed and how to install the rest

@@ -362,6 +362,83 @@ def _summary(console: Console, config_path: Path) -> None:
     )
 
 
+def _save_web_config(
+    config_path: Path,
+    enabled: bool,
+    port: int,
+    auth_token: str,
+) -> None:
+    """Persist channels.web settings into config.yaml."""
+    config: dict[str, Any] = {}
+    if config_path.exists():
+        try:
+            with open(config_path) as f:
+                config = yaml.safe_load(f) or {}
+        except Exception:
+            config = {}
+    channels = config.get("channels") or {}
+    channels["web"] = {
+        "enabled": enabled,
+        "host": "127.0.0.1",
+        "port": port,
+        "auth_token": auth_token,
+        "user_id": "web_user",
+    }
+    config["channels"] = channels
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+
+def _prompt_web_ui(console: Console, config_path: Path) -> None:
+    """Optionally enable the localhost web UI channel."""
+    console.print()
+    console.print(
+        Panel.fit(
+            "[bold]Localhost web UI[/bold]\n\n"
+            "A tiny single-page chat interface plus a JSON API that lets\n"
+            "you drive the entire SafestClaw engine from a browser.\n\n"
+            "[bold]Bound to 127.0.0.1 only.[/bold] If you want remote access,\n"
+            "put a reverse proxy with TLS + auth in front.\n\n"
+            "Endpoint: http://127.0.0.1:<port>",
+            title="Optional: web UI",
+            border_style="cyan",
+        )
+    )
+    if not Confirm.ask(
+        "Enable the localhost web UI?", default=False, console=console
+    ):
+        _save_web_config(
+            config_path, enabled=False, port=8771, auth_token=""
+        )
+        console.print("[dim]Web UI left disabled.[/dim]")
+        return
+
+    port = IntPrompt.ask("Port", default=8771, console=console)
+    use_token = Confirm.ask(
+        "Require an auth token? (recommended on shared machines)",
+        default=False,
+        console=console,
+    )
+    auth_token = ""
+    if use_token:
+        auth_token = Prompt.ask(
+            "Auth token (paste a long random string)",
+            password=True,
+            console=console,
+        ).strip()
+
+    _save_web_config(
+        config_path, enabled=True, port=port, auth_token=auth_token
+    )
+    console.print(
+        f"[green]Web UI enabled at http://127.0.0.1:{port}[/green]"
+    )
+    console.print(
+        "[dim]Run [bold]safestclaw web[/bold] to start it standalone, or "
+        "[bold]safestclaw run --web[/bold] alongside other channels.[/dim]"
+    )
+
+
 def _save_fastmcp_config(
     config_path: Path,
     enabled: bool,
@@ -500,6 +577,7 @@ async def run_wizard(
         )
 
     if mode != 4:
+        _prompt_web_ui(console, config_path)
         _prompt_fastmcp(console, config_path)
 
     _mark_completed(config_path)

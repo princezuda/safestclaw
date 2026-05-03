@@ -9,6 +9,17 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 ## [Unreleased]
 
 ### Added
+- **Localhost web UI** — drive the entire SafestClaw engine from a browser.
+  - Single-page chat interface served at `http://127.0.0.1:8771/` (no
+    CDNs, no JS framework, no external assets)
+  - JSON API: `GET /api/health`, `GET /api/actions`, `GET /api/help`,
+    `POST /api/message`, `GET /api/history`
+  - Loopback bind enforced at construction (refuses `0.0.0.0` etc.)
+  - Optional `auth_token` for shared dev boxes (Bearer or
+    `X-SafestClaw-Token` header)
+  - New `safestclaw web` CLI; `safestclaw run --web` to run alongside
+    other channels
+  - Setup wizard now offers a web-UI step
 - **Security plugin** — wraps deterministic security scanners (bandit,
   pip-audit, safety, semgrep, trivy, detect-secrets, gitleaks) as a
   SafestClaw action. No AI required.

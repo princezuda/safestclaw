@@ -32,6 +32,15 @@ channels:
     enabled: true
     port: 8765
     host: "127.0.0.1"  # Use "0.0.0.0" only if you need network access
+  web:
+    # Localhost-only web UI + JSON API. Drive the entire engine from a
+    # browser at http://127.0.0.1:<port>. Loopback bind is enforced;
+    # put a reverse proxy in front for remote access.
+    enabled: false
+    host: "127.0.0.1"
+    port: 8771
+    auth_token: ""        # optional — Bearer token required when set
+    user_id: "web_user"
   telegram:
     enabled: false
     token: ""  # Get from @BotFather

@@ -347,12 +347,13 @@ def run(
     config: Path | None = typer.Option(None, "--config", "-c"),
     webhook: bool = typer.Option(False, "--webhook", help="Enable webhook server"),
     telegram: bool = typer.Option(False, "--telegram", help="Enable Telegram bot"),
+    web: bool = typer.Option(False, "--web", help="Enable localhost web UI"),
     verbose: bool = typer.Option(False, "--verbose"),
 ):
     """Start SafestClaw with configured channels."""
     setup_logging(verbose)
     try:
-        asyncio.run(_run_all(config, webhook, telegram))
+        asyncio.run(_run_all(config, webhook, telegram, web))
     except KeyboardInterrupt:
         pass
     finally:
@@ -364,6 +365,7 @@ async def _run_all(
     config_path: Path | None,
     enable_webhook: bool,
     enable_telegram: bool,
+    enable_web: bool = False,
 ) -> None:
     """Run all configured channels."""
     engine = create_engine(config_path)
@@ -387,6 +389,20 @@ async def _run_all(
             engine.register_channel("telegram", telegram_channel)
         else:
             console.print("[yellow]Telegram token not configured[/yellow]")
+
+    # Add localhost web UI if enabled (flag or config)
+    web_cfg = (engine.config.get("channels") or {}).get("web") or {}
+    if enable_web or web_cfg.get("enabled"):
+        from safestclaw.channels.web import WebChannel
+        try:
+            web_channel = WebChannel.from_config(engine, web_cfg)
+            engine.register_channel("web", web_channel)
+            console.print(
+                f"[green]Web UI:[/green] "
+                f"http://{web_channel.host}:{web_channel.port}"
+            )
+        except (ImportError, ValueError) as e:
+            console.print(f"[red]Could not start web UI: {e}[/red]")
 
     await engine.start()
 
@@ -1015,6 +1031,59 @@ def setup(
     setup_logging(verbose)
     config_path = config or Path("config/config.yaml")
     asyncio.run(run_wizard(config_path, console))
+
+
+@app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", "--host", "-h",
+                              help="Bind host (loopback only)"),
+    port: int = typer.Option(8771, "--port", "-p", help="Port"),
+    token: str = typer.Option("", "--token", help="Optional auth token"),
+    config: Path | None = typer.Option(None, "--config", "-c"),
+    verbose: bool = typer.Option(False, "--verbose"),
+):
+    """
+    Start the localhost web UI.
+
+    Exposes the entire SafestClaw engine — every action, plugin, and
+    command — through a tiny chat interface plus a JSON API at
+    http://127.0.0.1:8771.
+    """
+    setup_logging(verbose)
+
+    async def _run() -> None:
+        engine = create_engine(config)
+        engine.load_config()
+        await engine.memory.initialize()
+
+        from safestclaw.channels.web import WebChannel
+        cfg = (engine.config.get("channels") or {}).get("web") or {}
+        try:
+            channel = WebChannel(
+                engine=engine,
+                host=host or cfg.get("host", "127.0.0.1"),
+                port=port or int(cfg.get("port", 8771)),
+                auth_token=token or cfg.get("auth_token") or None,
+                user_id=cfg.get("user_id", "web_user"),
+            )
+        except (ImportError, ValueError) as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+        engine.register_channel("web", channel)
+        console.print(
+            f"[green]SafestClaw web UI:[/green] "
+            f"http://{channel.host}:{channel.port}"
+            + ("  (token required)" if channel.auth_token else "")
+        )
+        try:
+            await channel.start()
+        except KeyboardInterrupt:
+            await channel.stop()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        pass
 
 
 @app.command()
