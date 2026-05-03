@@ -115,8 +115,10 @@ apis:
 #   general: "local-ollama"     # LLM for everything else
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Auto-Blog Scheduler (100-Star Feature) — Cron publishing without LLM
-# Fetches from RSS, summarizes with sumy, formats, publishes. Zero AI cost.
+# Auto-Blog Scheduler — Cron publishing.
+# Source gathering + extractive summarization (sumy) are always deterministic.
+# Setting llm_enabled: true post-processes the deterministic draft through
+# the configured AI provider (or task_providers.blog).
 # ─────────────────────────────────────────────────────────────────────────────
 # auto_blogs:
 #   - name: "weekly-tech"
@@ -128,6 +130,12 @@ apis:
 #     max_items: 5
 #     auto_publish: false             # true = publish, false = save draft
 #     publish_target: ""              # target label or empty for local
+#     # ── Optional LLM step (uses ai_providers below) ──
+#     llm_enabled: false              # true = run draft through an LLM
+#     llm_mode: "rewrite"             # rewrite | expand | headline | generate
+#     llm_provider: ""                # provider label, or "" for task_providers.blog
+#     llm_topic: ""                   # only used when llm_mode == "generate"
+#     llm_system_prompt: ""           # optional override
 
 # ─────────────────────────────────────────────────────────────────────────────
 # AI Providers - Optional. Used for blog writing, research, and coding.

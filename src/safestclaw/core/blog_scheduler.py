@@ -55,6 +55,25 @@ class AutoBlogConfig:
     publish_target: str = ""  # Specific target label, or empty for local
     auto_publish: bool = False  # Publish immediately or save as draft
 
+    # Optional LLM enrichment. When `llm_enabled` is true the deterministic
+    # draft is post-processed by the configured AI provider before
+    # publishing. Source gathering + extractive summarisation still run
+    # deterministically — the LLM only sees the finished draft, never the
+    # internet directly.
+    #
+    # Modes:
+    #   "rewrite"  — improve flow / readability of the deterministic draft
+    #   "expand"   — same draft, expanded with examples and depth
+    #   "generate" — drop the deterministic draft and write a brand-new
+    #                post using the gathered items as context
+    #   "headline" — keep the deterministic body, replace the title with an
+    #                LLM-generated headline
+    llm_enabled: bool = False
+    llm_mode: str = "rewrite"
+    llm_provider: str = ""        # provider label; empty = task_providers["blog"] or active
+    llm_topic: str = ""           # only used when llm_mode == "generate"
+    llm_system_prompt: str = ""   # optional system-prompt override
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dict."""
         return {
@@ -72,6 +91,11 @@ class AutoBlogConfig:
             "post_template": self.post_template,
             "publish_target": self.publish_target,
             "auto_publish": self.auto_publish,
+            "llm_enabled": self.llm_enabled,
+            "llm_mode": self.llm_mode,
+            "llm_provider": self.llm_provider,
+            "llm_topic": self.llm_topic,
+            "llm_system_prompt": self.llm_system_prompt,
         }
 
     @classmethod
@@ -92,6 +116,11 @@ class AutoBlogConfig:
             post_template=data.get("post_template", "digest"),
             publish_target=data.get("publish_target", ""),
             auto_publish=data.get("auto_publish", False),
+            llm_enabled=data.get("llm_enabled", False),
+            llm_mode=data.get("llm_mode", "rewrite"),
+            llm_provider=data.get("llm_provider", ""),
+            llm_topic=data.get("llm_topic", ""),
+            llm_system_prompt=data.get("llm_system_prompt", ""),
         )
 
 
@@ -114,6 +143,8 @@ class BlogScheduler:
             summarize_items=True,
             max_items_per_feed=10,
         )
+        # Lazily built — only instantiated when an LLM-enabled schedule fires.
+        self._ai_writer: Any = None
 
     def add_schedule(self, config: AutoBlogConfig) -> str:
         """
@@ -195,24 +226,33 @@ class BlogScheduler:
 
     async def _execute_auto_blog(self, config: AutoBlogConfig) -> None:
         """
-        Execute an auto-blog job. Fetches content, summarizes, formats, publishes.
+        Execute an auto-blog job. Fetches content, summarizes, formats, optionally
+        enriches with an LLM, then publishes.
 
-        This is the core cron callback - no LLM involved.
+        Source gathering and extractive summarisation are always deterministic
+        — the LLM (when enabled) only sees the finished draft, never the
+        internet directly. That keeps prompt-injection surface to a minimum.
         """
         logger.info(f"Executing auto-blog: {config.name}")
 
         try:
-            # 1. Gather content from all sources
+            # 1. Gather content from all sources (deterministic)
             content_items = await self._gather_content(config)
 
             if not content_items:
                 logger.warning(f"Auto-blog '{config.name}': no content gathered")
                 return
 
-            # 2. Format into blog post
+            # 2. Format into a deterministic blog post
             title, body = self._format_post(config, content_items)
 
-            # 3. Save or publish
+            # 3. Optional LLM enrichment
+            if config.llm_enabled:
+                title, body = await self._llm_enrich(
+                    config, title, body, content_items
+                )
+
+            # 4. Save or publish
             if config.auto_publish and config.publish_target:
                 await self._publish_post(config, title, body)
             else:
@@ -222,6 +262,183 @@ class BlogScheduler:
 
         except Exception as e:
             logger.error(f"Auto-blog '{config.name}' failed: {e}")
+
+    # ------------------------------------------------------------------
+    # LLM enrichment
+    # ------------------------------------------------------------------
+
+    def _resolve_llm_provider(self, config: AutoBlogConfig) -> str | None:
+        """
+        Pick the provider label to use for this schedule.
+
+        Priority:
+          1. Explicit `llm_provider` on the schedule
+          2. `task_providers.blog` from the engine config
+          3. The active provider on the AI writer
+        """
+        if config.llm_provider:
+            return config.llm_provider
+        task_providers = self.engine.config.get("task_providers") or {}
+        blog_label = task_providers.get("blog")
+        if blog_label:
+            return blog_label
+        return None  # AIWriter will fall back to its active provider
+
+    def _get_ai_writer(self) -> Any:
+        """Lazily build an AIWriter from engine config."""
+        if self._ai_writer is None:
+            from safestclaw.core.ai_writer import load_ai_writer_from_yaml
+            self._ai_writer = load_ai_writer_from_yaml(self.engine.config)
+        return self._ai_writer
+
+    async def _llm_enrich(
+        self,
+        config: AutoBlogConfig,
+        title: str,
+        body: str,
+        items: list[dict[str, str]],
+    ) -> tuple[str, str]:
+        """
+        Run the deterministic draft (or the gathered items) through the AI
+        writer. Returns ``(title, body)``. On any failure we fall back to
+        the deterministic draft so the cron job still publishes something.
+        """
+        try:
+            writer = self._get_ai_writer()
+        except Exception as e:
+            logger.warning(
+                f"Auto-blog '{config.name}': AI writer init failed ({e}); "
+                "falling back to deterministic draft."
+            )
+            return title, body
+
+        if not writer.providers:
+            logger.warning(
+                f"Auto-blog '{config.name}': llm_enabled=true but no "
+                "ai_providers configured. Falling back."
+            )
+            return title, body
+
+        provider = self._resolve_llm_provider(config)
+        mode = (config.llm_mode or "rewrite").lower().strip()
+        system_prompt_override = (config.llm_system_prompt or "").strip()
+
+        async def _call_template(template_name: str, **render_kwargs: str) -> Any:
+            """
+            Run a built-in BlogPromptTemplates entry through writer.generate
+            with our optional system-prompt override. Falls back to the
+            convenience helpers when no override is set so behaviour matches
+            the chat-side `ai blog ...` commands by default.
+            """
+            if not system_prompt_override:
+                # Use the convenience helpers — same code path as `ai blog`
+                helper = {
+                    "rewrite": writer.rewrite_blog,
+                    "expand": writer.expand_blog,
+                    "headline": writer.generate_headlines,
+                }.get(template_name)
+                if helper is not None:
+                    arg = render_kwargs.get("content") or render_kwargs.get("body")
+                    return await helper(arg, provider_label=provider)
+            prompt = writer.templates.render(template_name, **render_kwargs)
+            return await writer.generate(
+                prompt,
+                provider_label=provider,
+                system_prompt=system_prompt_override
+                or "You are a skilled blog writer. Write clear, engaging content.",
+            )
+
+        try:
+            if mode == "rewrite":
+                resp = await _call_template("rewrite", content=body)
+                if resp.success and resp.content.strip():
+                    return title, resp.content.strip()
+
+            elif mode == "expand":
+                resp = await _call_template("expand", content=body)
+                if resp.success and resp.content.strip():
+                    return title, resp.content.strip()
+
+            elif mode == "headline":
+                resp = await _call_template("headline", content=body)
+                if resp.success and resp.content.strip():
+                    headline = resp.content.strip().splitlines()[0].strip()
+                    headline = headline.lstrip("0123456789.- ").strip('"').strip()
+                    if headline:
+                        return headline, body
+
+            elif mode == "generate":
+                topic = config.llm_topic or self._derive_topic(items)
+                context = self._items_as_context(items)
+                if system_prompt_override:
+                    prompt = writer.templates.render(
+                        "generate", topic=topic, context=context
+                    )
+                    resp = await writer.generate(
+                        prompt,
+                        provider_label=provider,
+                        system_prompt=system_prompt_override,
+                    )
+                else:
+                    resp = await writer.generate_blog(
+                        topic=topic,
+                        provider_label=provider,
+                        context=context,
+                    )
+                if resp.success and resp.content.strip():
+                    new_body = resp.content.strip()
+                    if config.include_source_links:
+                        new_body += "\n\n## Sources\n" + "\n".join(
+                            f"- [{i.get('title', i.get('source', 'source'))}]"
+                            f"({i.get('link', '')})"
+                            for i in items if i.get("link")
+                        )
+                    return title, new_body
+
+            else:
+                logger.warning(
+                    f"Auto-blog '{config.name}': unknown llm_mode '{mode}'; "
+                    "using deterministic draft."
+                )
+                return title, body
+
+            # Provider returned an error / empty body — keep the deterministic draft.
+            err = getattr(resp, "error", "no content returned")
+            logger.warning(
+                f"Auto-blog '{config.name}': LLM mode '{mode}' produced "
+                f"no usable output ({err}); falling back."
+            )
+        except Exception as e:
+            logger.warning(
+                f"Auto-blog '{config.name}': LLM enrichment failed ({e}); "
+                "falling back to deterministic draft."
+            )
+
+        return title, body
+
+    @staticmethod
+    def _derive_topic(items: list[dict[str, str]]) -> str:
+        """Best-effort topic line for `generate` mode when llm_topic is empty."""
+        categories = [i.get("category") for i in items if i.get("category")]
+        if categories:
+            uniq = list(dict.fromkeys(categories))[:3]
+            return f"Today in {', '.join(uniq)}"
+        titles = [i.get("title", "") for i in items[:3]]
+        return " · ".join(t for t in titles if t) or "Today's roundup"
+
+    @staticmethod
+    def _items_as_context(items: list[dict[str, str]]) -> str:
+        """Render gathered items as a context block for `generate` mode."""
+        lines: list[str] = []
+        for i, item in enumerate(items, 1):
+            lines.append(f"[{i}] {item.get('title', 'Untitled')}")
+            summary = (item.get("summary") or "").strip()
+            if summary:
+                lines.append(f"    {summary}")
+            link = item.get("link")
+            if link:
+                lines.append(f"    Source: {link}")
+        return "\n".join(lines)
 
     async def _gather_content(
         self,

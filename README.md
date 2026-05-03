@@ -253,6 +253,9 @@ handled entirely locally with zero tokens consumed.
 * **Cron scheduling** — Schedule recurring blog generation with cron expressions
 * **Source categories** — Pull from specific RSS categories automatically
 * **Async-safe** — Detects scheduler type mismatches and warns clearly instead of silently failing
+* **Optional LLM step** — Source gathering stays deterministic; opt-in `llm_enabled` post-processes the draft via the configured AI provider (modes: `rewrite`, `expand`, `headline`, `generate`)
+* **Honors `task_providers.blog`** — Use a different LLM for blogging vs research / coding
+* **Graceful fallback** — On any LLM failure (rate limit, network, no providers) the cron job publishes the deterministic draft instead of skipping
 
 ### 🧠 Smart Prompt Builder
 * **Task-aware prompts** — Generates optimized prompts for blog, research, and coding tasks
@@ -711,7 +714,10 @@ Offline coding utilities plus optional LLM-powered features.
 
 ### Auto Blog Scheduler
 
-Schedule recurring blog generation with cron expressions.
+Schedule recurring blog generation with cron expressions. Source
+gathering and extractive summarisation are always deterministic; an
+optional LLM step can rewrite, expand, headline, or fully regenerate
+the post.
 
 ```
 > auto blog setup
@@ -726,6 +732,43 @@ Schedule recurring blog generation with cron expressions.
 > auto blog remove weekly-tech
   Removed.
 ```
+
+Without LLM (the default):
+
+```yaml
+auto_blogs:
+  - name: "weekly-tech"
+    cron_expr: "0 9 * * 1"
+    source_categories: [tech, programming]
+    post_template: "digest"
+    auto_publish: false
+```
+
+With LLM enrichment (uses `ai_providers` and optionally `task_providers.blog`):
+
+```yaml
+auto_blogs:
+  - name: "weekly-tech-llm"
+    cron_expr: "0 9 * * 1"
+    source_categories: [tech]
+    post_template: "digest"
+    llm_enabled: true
+    llm_mode: "rewrite"          # rewrite | expand | headline | generate
+    llm_provider: ""             # blank = use task_providers.blog or active
+    # llm_topic: "The week in ML"  # only for llm_mode: generate
+    # llm_system_prompt: "Be terse."  # optional override
+```
+
+Modes:
+
+* **rewrite** — improve the deterministic draft's flow and readability
+* **expand** — add depth and examples to the deterministic draft
+* **headline** — keep the body, replace the title
+* **generate** — write a brand-new post from the gathered items as context
+
+If the LLM call fails (rate limit, network, no providers), the
+deterministic draft is published instead — the cron job never silently
+skips.
 
 ### Task-Aware Prompt Builder
 

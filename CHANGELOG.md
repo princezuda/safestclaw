@@ -9,6 +9,17 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 ## [Unreleased]
 
 ### Added
+- **Auto-blog: optional LLM enrichment.** Source gathering and extractive
+  summarisation still run deterministically; setting `llm_enabled: true`
+  on an `auto_blogs` entry post-processes the deterministic draft through
+  the configured AI provider (or `task_providers.blog`).
+  - Modes: `rewrite`, `expand`, `headline`, `generate`
+  - Honors `task_providers.blog` so a different LLM can be used for
+    blogging vs. research / coding
+  - Falls back to the deterministic draft on any LLM failure (rate limit,
+    network error, no providers configured) — the cron job always
+    publishes something
+  - Optional per-schedule `llm_system_prompt` override
 - **Localhost web UI** — drive the entire SafestClaw engine from a browser.
   - Single-page chat interface served at `http://127.0.0.1:8771/` (no
     CDNs, no JS framework, no external assets)

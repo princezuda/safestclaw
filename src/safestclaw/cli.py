@@ -191,9 +191,10 @@ async def _autoblog_action(
 
     # Show help / setup instructions
     return (
-        "**Auto-Blog: Cron-Based Publishing (No LLM)**\n\n"
+        "**Auto-Blog: Cron-Based Publishing**\n\n"
         "Auto-blog fetches content from RSS feeds, summarizes with sumy,\n"
-        "formats into posts, and publishes on schedule. Zero AI cost.\n\n"
+        "formats into posts, and publishes on schedule. Source gathering\n"
+        "is always deterministic; an LLM step is opt-in.\n\n"
         "Configure in config.yaml:\n"
         "```yaml\n"
         "auto_blogs:\n"
@@ -207,11 +208,20 @@ async def _autoblog_action(
         "    max_items: 5\n"
         "    auto_publish: false        # true = publish, false = save draft\n"
         '    publish_target: ""         # target label or empty for local\n'
+        "    # Optional LLM enrichment (uses ai_providers below):\n"
+        "    llm_enabled: false\n"
+        '    llm_mode: "rewrite"        # rewrite | expand | headline | generate\n'
+        '    llm_provider: ""           # provider label, or task_providers.blog\n'
         "```\n\n"
         "Templates:\n"
         "  - **digest**: Multi-item roundup with categories\n"
         "  - **single**: Feature one story with related items\n"
         "  - **curated**: Numbered list with editorial excerpts\n\n"
+        "LLM modes (when llm_enabled: true):\n"
+        "  - **rewrite**:  improve flow / readability of the draft\n"
+        "  - **expand**:   add depth and examples to the draft\n"
+        "  - **headline**: keep the body, replace the title\n"
+        "  - **generate**: write a brand-new post from gathered items\n\n"
         "Commands:\n"
         "  `auto blog list` — Show all schedules\n"
         "  `auto blog remove <name>` — Remove a schedule"
