@@ -80,7 +80,8 @@ def build_mcp_server(
     """
     if not HAS_FASTMCP:
         raise ImportError(
-            "fastmcp is not installed. Run: pip install safestclaw[mcp]"
+            "fastmcp is not installed. Run: pip install fastmcp "
+            "(or, from a checkout: pip install -e \".[mcp]\")"
         )
 
     excluded = set(DEFAULT_EXCLUDED_ACTIONS)
@@ -163,7 +164,8 @@ async def serve_mcp(
     """
     if not HAS_FASTMCP:
         raise ImportError(
-            "fastmcp is not installed. Run: pip install safestclaw[mcp]"
+            "fastmcp is not installed. Run: pip install fastmcp "
+            "(or, from a checkout: pip install -e \".[mcp]\")"
         )
 
     # Make sure config is loaded so actions can read provider settings.

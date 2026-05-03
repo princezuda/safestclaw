@@ -131,7 +131,7 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 
 ### 📅 Calendar Support
 * **ICS Files** — Import and parse .ics calendar files
-* **CalDAV** — Sync from Nextcloud, Radicale, iCloud, Fastmail, Google (`pip install safestclaw[caldav]`)
+* **CalDAV** — Sync from Nextcloud, Radicale, iCloud, Fastmail, Google (`pip install caldav` — or, from a checkout, `pip install -e ".[caldav]"`)
 * **Event filtering** — Today, upcoming, by date range
 * **Chat commands** — `calendar today`, `calendar upcoming 14`, `calendar import ~/cal.ics`, `calendar sync`, `calendar calendars`
 
@@ -155,7 +155,7 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **Transports** — `stdio` (Claude Desktop, IDE extensions), `sse`, `streamable-http`
 * **Run as a subprocess** — `safestclaw mcp` (the format MCP clients spawn)
 * **In-process HTTP** — enable `plugins.fastmcp.autostart` to expose a SSE/HTTP server when SafestClaw boots
-* **Opt-in** — `pip install safestclaw[mcp]`, then enable in the setup wizard or `config.yaml`
+* **Opt-in** — `pip install fastmcp` (or, from a checkout, `pip install -e ".[mcp]"`), then enable in the setup wizard or `config.yaml`
 
 ### 🔬 Real Research Sources
 * **arXiv** — Search academic papers across CS, math, physics, biology, and more (free, no API key)

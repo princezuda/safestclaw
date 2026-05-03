@@ -1048,7 +1048,8 @@ def mcp(
     if not HAS_FASTMCP:
         console.print(
             "[red]fastmcp not installed.[/red] Install with: "
-            "[bold]pip install safestclaw[mcp][/bold]"
+            "[bold]pip install fastmcp[/bold] "
+            "(or, from a checkout: [bold]pip install -e \".[mcp]\"[/bold])"
         )
         raise typer.Exit(1)
 

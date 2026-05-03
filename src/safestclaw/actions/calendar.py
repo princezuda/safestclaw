@@ -231,7 +231,8 @@ class CalDAVClient:
     ):
         if not HAS_CALDAV:
             raise ImportError(
-                "caldav not installed. Run: pip install safestclaw[caldav]"
+                "caldav not installed. Run: pip install caldav "
+                "(or, from a checkout: pip install -e \".[caldav]\")"
             )
         self.url = url
         self.username = username
@@ -584,7 +585,8 @@ class CalendarAction(BaseAction):
         if not HAS_CALDAV:
             return (
                 "CalDAV support not installed. "
-                "Run: pip install safestclaw[caldav]"
+                "Run: pip install caldav "
+                "(or, from a checkout: pip install -e \".[caldav]\")"
             )
 
         client = self._build_caldav_client(engine)
@@ -620,7 +622,8 @@ class CalendarAction(BaseAction):
         if not HAS_CALDAV:
             return (
                 "CalDAV support not installed. "
-                "Run: pip install safestclaw[caldav]"
+                "Run: pip install caldav "
+                "(or, from a checkout: pip install -e \".[caldav]\")"
             )
 
         client = self._build_caldav_client(engine)

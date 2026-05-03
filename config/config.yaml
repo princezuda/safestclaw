@@ -67,7 +67,8 @@ memory:
 # Plugins (optional)
 # plugins:
 #   # FastMCP — expose every SafestClaw action as a Model Context Protocol tool.
-#   # Requires: pip install safestclaw[mcp]
+#   # Requires: pip install fastmcp
+#   # (or, from a checkout: pip install -e ".[mcp]")
 #   fastmcp:
 #     enabled: true
 #     autostart: false           # only used for sse / streamable-http
