@@ -280,6 +280,13 @@ publish_targets:
   #   sftp_password: ""                 # Or use SSH key below
   #   sftp_key_path: "~/.ssh/id_rsa"   # SSH private key path
   #   sftp_remote_path: "/var/www/html/blog"
+  #   sftp_subfolder: ""                # optional subdir under sftp_remote_path
+  #   html_template: ""                 # optional inline template — placeholders:
+  #                                     #   {title} {content} {excerpt} {date} {slug}
+  #   html_template_path: ""            # or a path to a .html template file
+  #   auto_detect_template: false       # if true and no template set, fetch a sample
+  #                                     # post from the remote folder and learn the
+  #                                     # template automatically (paramiko required)
 
   # --- Generic API ---
   # POST/PUT JSON to any endpoint. Use body_template for custom formats.

@@ -6,6 +6,25 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 
 ---
 
+## [Unreleased]
+
+### Added
+- **SFTP folder browser** — `list folders [on <target>]` enumerates the
+  subdirectories under the target's `remote_path` so you can pick where
+  to publish without typing the path. Recognises an explicit base
+  override too: `list folders on myhost /var/www/html`.
+- **Auto-learn HTML template from existing posts** — `learn template
+  from <target>` downloads the most recent `.html` post in the target's
+  remote folder, identifies the title (`<h1>` / `<title>`) and main
+  content area (`<article>`, `<main>`, `.post-content`, …), replaces
+  them with `{title}` / `{content}` placeholders, and saves the result
+  as the target's `html_template`. Existing site chrome (head, nav,
+  footer, sidebar, scripts, styles) is preserved verbatim.
+- **`auto_detect_template: true`** target field — runs the same template
+  learner automatically on the first publish if no template is set;
+  caches the result on the target so subsequent publishes are instant.
+  Falls back to the default template on any failure.
+
 ## [0.4.1] - 2026-05-03 — first PyPI release
 
 ### Added

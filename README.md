@@ -191,6 +191,9 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 
 ### 📤 Blog Publishing — Preview, Templates, Repeat
 * **Preview before publishing** — `preview blog [to <target>]` renders the exact HTML that would be uploaded and saves a copy locally so you can open it in a browser
+* **Browse remote folders** — `list folders on <target>` lists subdirectories under the target's remote path so you can pick where to publish (requires `pip install safestclaw[sftp]`)
+* **Auto-learn template from existing posts** — `learn template from <target>` downloads the most recent post on the server, detects title + content regions, replaces them with `{title}` / `{content}` placeholders, and saves the result as the target's template. Site chrome (head, nav, footer, sidebar) is preserved verbatim
+* **Or set `auto_detect_template: true`** on a target and the first publish learns and caches the template automatically — no manual step
 * **Custom HTML template per target** — set `html_template` (inline) or `html_template_path` (file) on a `publish_targets` entry; placeholders: `{title}`, `{content}`, `{excerpt}`, `{date}`, `{slug}`
 * **Subfolder per site** — `sftp_subfolder: "blog"` (or set inline with `subfolder=blog/posts` on the setup command) so each post uploads to `{remote_path}/{subfolder}/<slug>.html`
 * **Repeat last publish** — `publish blog again` or `publish blog to here` reuses the last successful target, no retyping

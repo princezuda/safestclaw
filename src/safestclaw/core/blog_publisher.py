@@ -76,6 +76,11 @@ class PublishTarget:
     # built-in default template is used.
     html_template_path: str = ""
     html_template: str = ""
+    # When True and no template is set, the publisher will fetch a
+    # recent post from the target's remote folder, detect title +
+    # content regions, and use that as the template (cached on the
+    # target object after the first publish).
+    auto_detect_template: bool = False
     # General
     enabled: bool = True
 
@@ -763,6 +768,33 @@ class BlogPublisher:
         # Custom template wins when present.
         if target is not None:
             template = target.load_html_template()
+
+            # Opt-in auto-detection: sniff a sample post from the
+            # remote folder and learn the template once, then cache it
+            # on the target so subsequent publishes are fast.
+            if (
+                not template
+                and getattr(target, "auto_detect_template", False)
+                and target.target_type == PublishTargetType.SFTP
+            ):
+                try:
+                    from safestclaw.core.sftp_browser import (
+                        learn_template_from_target,
+                    )
+                    learned, source = learn_template_from_target(target)
+                    target.html_template = learned
+                    template = learned
+                    logger.info(
+                        "Auto-learned HTML template for %s from %s",
+                        target.label, source,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "auto_detect_template failed for %s: %s — "
+                        "falling back to default template.",
+                        target.label, e,
+                    )
+
             if template:
                 try:
                     return template.format(
@@ -1051,6 +1083,7 @@ class BlogPublisher:
                 sftp_subfolder=t.get("sftp_subfolder", ""),
                 html_template_path=t.get("html_template_path", ""),
                 html_template=t.get("html_template", ""),
+                auto_detect_template=t.get("auto_detect_template", False),
                 wp_status=t.get("wp_status", "publish"),
                 wp_category_ids=t.get("wp_category_ids", []),
                 wp_tag_ids=t.get("wp_tag_ids", []),

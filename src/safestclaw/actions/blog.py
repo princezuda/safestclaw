@@ -18,6 +18,7 @@ Features:
 - Multiple AI API keys and publishing targets
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -216,6 +217,10 @@ class BlogAction(BaseAction):
             return await self._preview_blog(raw_input, user_id, engine)
         if self._is_publish_again(lower):
             return await self._publish_again(user_id, engine)
+        if self._is_list_folders(lower):
+            return await self._list_remote_folders(raw_input, engine)
+        if self._is_learn_template(lower):
+            return await self._learn_template(raw_input, engine)
         if self._is_publish_remote(lower):
             return await self._publish_remote(raw_input, user_id)
         if self._is_list_targets(lower):
@@ -682,6 +687,23 @@ class BlogAction(BaseAction):
             r"^(?:publish|upload|deploy)\s+(?:blog\s+)?again\b|"
             r"^republish(?:\s+blog)?\b|"
             r"^publish\s+(?:blog\s+)?to\s+(?:here|same|last|previous)\b",
+            text,
+        ))
+
+    def _is_list_folders(self, text: str) -> bool:
+        """Match `list folders [on <target>]`, `browse folders on <target>`."""
+        return bool(re.search(
+            r"^(?:list|show|browse)\s+(?:remote\s+)?folders?\b|"
+            r"^(?:list|show|browse)\s+(?:remote\s+)?(?:dirs?|directories)\b|"
+            r"^pick\s+folder\b",
+            text,
+        ))
+
+    def _is_learn_template(self, text: str) -> bool:
+        """Match `learn template [from <target>]`, `grab template`, `auto template`."""
+        return bool(re.search(
+            r"^(?:learn|grab|fetch|sniff|detect|auto)\s+(?:blog\s+)?template\b|"
+            r"^template\s+(?:from|learn|sniff)\b",
             text,
         ))
 
@@ -1537,6 +1559,203 @@ class BlogAction(BaseAction):
         """Best-effort title from the draft's first line."""
         first = (content.split("\n", 1)[0] or "").strip().lstrip("#").strip()
         return first[:80] or "Untitled Blog Post"
+
+    # ------------------------------------------------------------------
+    # SFTP folder browser + template learner
+    # ------------------------------------------------------------------
+
+    def _resolve_target_label(
+        self, raw_input: str, default_first: bool = True,
+    ) -> tuple[str | None, str | None]:
+        """
+        Pull a target label out of free-form text. Recognises:
+          - "... on <label>"
+          - "... from <label>"
+          - "... to <label>"
+        Falls back to the first configured target if nothing matches.
+
+        Returns ``(label, error)``. ``error`` is set when no target was
+        named *and* there are no configured targets.
+        """
+        m = re.search(
+            r"\b(?:on|from|to|for)\s+([\w\-.]+)\s*$",
+            raw_input.strip(), re.IGNORECASE,
+        )
+        if m:
+            return m.group(1), None
+        if not self.publisher or not self.publisher.targets:
+            return None, (
+                "No publish targets configured. "
+                "Use `setup blog publish sftp://host user pass` first."
+            )
+        if default_first:
+            return next(iter(self.publisher.targets)), None
+        return None, "Specify a target: `... on <target-label>`"
+
+    async def _list_remote_folders(
+        self,
+        raw_input: str,
+        engine: "SafestClaw",
+    ) -> str:
+        """
+        List subdirectories under the named target's remote_path so the
+        user can pick a folder without having to type a path from memory.
+
+        Also accepts an explicit base path:
+          list folders on myhost /var/www/html
+        """
+        if not self.publisher:
+            self.publisher = BlogPublisher.from_config(engine.config or {})
+
+        label, err = self._resolve_target_label(raw_input)
+        if err:
+            return err
+
+        target = self.publisher.targets.get(label) if label else None
+        if target is None:
+            return f"Unknown target: {label}"
+        if target.target_type != PublishTargetType.SFTP:
+            return f"Folder browsing is only supported for SFTP targets ({target.label} is {target.target_type.value})."
+
+        # Optional explicit path override:  list folders on host /var/www/html
+        path_m = re.search(r"\s(/[^\s]+)\s*(?:on|from)?\s*$", raw_input)
+        base_override = path_m.group(1) if path_m else None
+
+        try:
+            from safestclaw.core.sftp_browser import HAS_PARAMIKO, list_folders
+        except Exception as e:  # pragma: no cover - import guard
+            return f"SFTP browser unavailable: {e}"
+
+        if not HAS_PARAMIKO:
+            return (
+                "Folder browsing requires paramiko. "
+                "Run: pip install safestclaw[sftp]"
+            )
+
+        try:
+            entries = await asyncio.to_thread(
+                list_folders, target, base_override,
+            )
+        except Exception as e:
+            return f"Could not list folders on {target.label}: {e}"
+
+        if not entries:
+            return (
+                f"No subdirectories under "
+                f"`{base_override or target.remote_dir()}` on {target.label}."
+            )
+
+        lines = [
+            f"**Folders on {target.label}** "
+            f"(`{base_override or target.remote_dir()}`)",
+            "",
+        ]
+        for i, e in enumerate(entries, 1):
+            mtime = e.mtime.strftime("%Y-%m-%d") if e.mtime else "—"
+            lines.append(f"  {i:>2}. {e.name}/   ({mtime})")
+        lines.extend([
+            "",
+            "Set the publish subfolder with one of:",
+            f"  `setup blog publish sftp://{target.sftp_host} {target.sftp_user} <pass> "
+            f"{target.sftp_remote_path} subfolder=<name>`",
+            "Or update `sftp_subfolder` in config.yaml under publish_targets.",
+        ])
+        return "\n".join(lines)
+
+    async def _learn_template(
+        self,
+        raw_input: str,
+        engine: "SafestClaw",
+    ) -> str:
+        """
+        Fetch a sample post from the named target's remote folder,
+        detect the title and main-content regions, replace them with
+        ``{title}`` / ``{content}`` placeholders, and save the result
+        as the target's ``html_template``. Future publishes will use
+        the learned template automatically.
+        """
+        if not self.publisher:
+            self.publisher = BlogPublisher.from_config(engine.config or {})
+
+        label, err = self._resolve_target_label(raw_input)
+        if err:
+            return err
+        target = self.publisher.targets.get(label) if label else None
+        if target is None:
+            return f"Unknown target: {label}"
+        if target.target_type != PublishTargetType.SFTP:
+            return "Template learning is only supported for SFTP targets."
+
+        try:
+            from safestclaw.core.sftp_browser import (
+                HAS_PARAMIKO,
+                learn_template_from_target,
+            )
+        except Exception as e:  # pragma: no cover
+            return f"SFTP browser unavailable: {e}"
+
+        if not HAS_PARAMIKO:
+            return (
+                "Template learning requires paramiko. "
+                "Run: pip install safestclaw[sftp]"
+            )
+
+        try:
+            template, source = await asyncio.to_thread(
+                learn_template_from_target, target,
+            )
+        except Exception as e:
+            return (
+                f"Could not learn template from {target.label}: {e}\n"
+                "Tip: make sure the target's `sftp_subfolder` points at a "
+                "directory that already contains at least one .html post."
+            )
+
+        # Cache on the in-memory target so the next publish uses it.
+        target.html_template = template
+
+        # Persist back to config so it survives restarts.
+        saved = self._save_template_to_config(target, template, engine)
+
+        snippet = template[:600] + ("…" if len(template) > 600 else "")
+        return (
+            f"**Learned template from {target.label}** ({source})\n\n"
+            f"  - Cached on target.html_template for this session\n"
+            f"  - Persisted to config.yaml: {'yes' if saved else 'no (could not write)'}\n\n"
+            f"Preview:\n```html\n{snippet}\n```\n\n"
+            f"Try `preview blog to {target.label}` to see how the next post will render."
+        )
+
+    def _save_template_to_config(
+        self,
+        target: PublishTarget,
+        template: str,
+        engine: "SafestClaw",
+    ) -> bool:
+        """Write a learned template back into config.yaml's
+        publish_targets entry. Returns True on success."""
+        try:
+            import yaml
+            config_path = getattr(engine, "config_path", None)
+            if not config_path:
+                return False
+            config_path = Path(config_path)
+            if not config_path.exists():
+                return False
+            data = yaml.safe_load(config_path.read_text()) or {}
+            for entry in (data.get("publish_targets") or []):
+                if entry.get("label") == target.label:
+                    entry["html_template"] = template
+                    break
+            else:
+                return False
+            config_path.write_text(
+                yaml.dump(data, default_flow_style=False, sort_keys=False)
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Could not save learned template: {e}")
+            return False
 
     @staticmethod
     def _parse_inline_target(raw_input: str) -> PublishTarget | None:
