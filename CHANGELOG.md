@@ -9,6 +9,18 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 ## [Unreleased]
 
 ### Added
+- **Security plugin** — wraps deterministic security scanners (bandit,
+  pip-audit, safety, semgrep, trivy, detect-secrets, gitleaks) as a
+  SafestClaw action. No AI required.
+  - Chat commands: `security tools`, `security scan [path]`,
+    `security bandit [path]`, `security pip-audit`, `security semgrep
+    [path]`, `security trivy [path]`, `security secrets [path]`,
+    `security gitleaks [path]`
+  - CLI: `safestclaw security <subcommand> [path]`
+  - Each scanner is optional — the plugin auto-detects what's installed
+    and prints install hints for the rest
+  - Subprocess invocation uses `create_subprocess_exec` (no shell);
+    paths are restricted to `plugins.security.allowed_paths`
 - **FastMCP plugin** — every SafestClaw action is now optionally exposed as a
   Model Context Protocol tool, so MCP-aware clients (Claude Desktop, IDE
   extensions, agents) can call them directly.

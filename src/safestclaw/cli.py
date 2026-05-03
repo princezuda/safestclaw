@@ -1018,6 +1018,42 @@ def setup(
 
 
 @app.command()
+def security(
+    subcommand: str = typer.Argument(
+        "tools",
+        help="tools | scan | bandit | pip-audit | safety | semgrep | trivy | "
+             "secrets | gitleaks | help",
+    ),
+    path: Path | None = typer.Argument(None, help="Target path (when needed)"),
+    config: Path | None = typer.Option(None, "--config", "-c"),
+    verbose: bool = typer.Option(False, "--verbose"),
+):
+    """
+    Run deterministic security scanners (bandit, pip-audit, semgrep, trivy,
+    detect-secrets, gitleaks). No AI required.
+    """
+    setup_logging(verbose)
+    from safestclaw.plugins.official.security import SecurityPlugin
+
+    async def _run() -> None:
+        engine = create_engine(config)
+        engine.load_config()
+        plugin = SecurityPlugin()
+        plugin.on_load(engine)
+
+        raw = subcommand if path is None else f"{subcommand} {path}"
+        result = await plugin.execute(
+            params={"raw_input": f"security {raw}"},
+            user_id="cli",
+            channel="cli",
+            engine=engine,
+        )
+        console.print(result)
+
+    asyncio.run(_run())
+
+
+@app.command()
 def mcp(
     transport: str = typer.Option(
         "stdio", "--transport", "-t",

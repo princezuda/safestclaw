@@ -150,6 +150,13 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **Vision** — YOLO object detection + OCR (~2GB)
 * **OCR** — Tesseract text extraction from images (lightweight)
 
+### 🛡️ Security Scanners (no AI)
+* **bandit, pip-audit, safety, semgrep, trivy, detect-secrets, gitleaks** — all optional, all auto-detected
+* `security tools` — see what's installed and how to install the rest
+* `security scan ~/projects/myapp` — run every available scanner against a path
+* Per-scanner: `security bandit <path>`, `security pip-audit`, `security trivy <path>`, etc.
+* Sandboxed: paths must be inside `plugins.security.allowed_paths`; scanners run via `create_subprocess_exec` (no shell)
+
 ### 🔌 Model Context Protocol (FastMCP)
 * **Every action as an MCP tool** — `summarize`, `crawl`, `calendar`, `news`, `blog`, `research`, … all callable from MCP clients
 * **Transports** — `stdio` (Claude Desktop, IDE extensions), `sse`, `streamable-http`

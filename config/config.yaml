@@ -76,6 +76,16 @@ memory:
 #     host: "127.0.0.1"
 #     port: 8770
 #     server_name: "safestclaw"
+#
+#   # Security scanners — wraps bandit, pip-audit, semgrep, trivy,
+#   # detect-secrets, gitleaks. No AI. Each tool is optional; install
+#   # whichever you want and the plugin auto-detects.
+#   security:
+#     allowed_paths:
+#       - "~"
+#       - "/tmp"
+#     timeout: 120                # seconds per scanner
+#     max_output: 20000           # truncate per-scanner output to N bytes
 
 # Optional API keys (for enhanced features)
 apis:
