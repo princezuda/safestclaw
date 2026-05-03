@@ -131,8 +131,9 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 
 ### 📅 Calendar Support
 * **ICS Files** — Import and parse .ics calendar files
-* **CalDAV** — Connect to Google Calendar, iCloud (optional)
+* **CalDAV** — Sync from Nextcloud, Radicale, iCloud, Fastmail, Google (`pip install caldav` — or, from a checkout, `pip install -e ".[caldav]"`)
 * **Event filtering** — Today, upcoming, by date range
+* **Chat commands** — `calendar today`, `calendar upcoming 14`, `calendar import ~/cal.ics`, `calendar sync`, `calendar calendars`
 
 ### 📄 Document Reading
 * **PDF** — Text extraction with PyMuPDF
@@ -148,6 +149,28 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **NLP** — spaCy named entity recognition (~50MB)
 * **Vision** — YOLO object detection + OCR (~2GB)
 * **OCR** — Tesseract text extraction from images (lightweight)
+
+### 🌐 Localhost Web UI
+* **Single-page chat** at `http://127.0.0.1:8771/` — no CDNs, no JS framework
+* **Drives the whole engine** — every action, every plugin, every command
+* **Loopback only** — `WebChannel` refuses non-127.0.0.1 binds at construction
+* **Optional auth** — Bearer token via `channels.web.auth_token`
+* **JSON API** — `/api/health`, `/api/actions`, `/api/help`, `/api/message`, `/api/history`
+* Run standalone: `safestclaw web` — or alongside other channels: `safestclaw run --web`
+
+### 🛡️ Security Scanners (no AI)
+* **bandit, pip-audit, safety, semgrep, trivy, detect-secrets, gitleaks** — all optional, all auto-detected
+* `security tools` — see what's installed and how to install the rest
+* `security scan ~/projects/myapp` — run every available scanner against a path
+* Per-scanner: `security bandit <path>`, `security pip-audit`, `security trivy <path>`, etc.
+* Sandboxed: paths must be inside `plugins.security.allowed_paths`; scanners run via `create_subprocess_exec` (no shell)
+
+### 🔌 Model Context Protocol (FastMCP)
+* **Every action as an MCP tool** — `summarize`, `crawl`, `calendar`, `news`, `blog`, `research`, … all callable from MCP clients
+* **Transports** — `stdio` (Claude Desktop, IDE extensions), `sse`, `streamable-http`
+* **Run as a subprocess** — `safestclaw mcp` (the format MCP clients spawn)
+* **In-process HTTP** — enable `plugins.fastmcp.autostart` to expose a SSE/HTTP server when SafestClaw boots
+* **Opt-in** — `pip install fastmcp` (or, from a checkout, `pip install -e ".[mcp]"`), then enable in the setup wizard or `config.yaml`
 
 ### 🔬 Real Research Sources
 * **arXiv** — Search academic papers across CS, math, physics, biology, and more (free, no API key)

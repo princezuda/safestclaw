@@ -32,6 +32,15 @@ channels:
     enabled: true
     port: 8765
     host: "127.0.0.1"  # Use "0.0.0.0" only if you need network access
+  web:
+    # Localhost-only web UI + JSON API. Drive the entire engine from a
+    # browser at http://127.0.0.1:<port>. Loopback bind is enforced;
+    # put a reverse proxy in front for remote access.
+    enabled: false
+    host: "127.0.0.1"
+    port: 8771
+    auth_token: ""        # optional — Bearer token required when set
+    user_id: "web_user"
   telegram:
     enabled: false
     token: ""  # Get from @BotFather
@@ -50,11 +59,42 @@ actions:
       - "/tmp"
   browser:
     enabled: false
+  # Calendar — local .ics import works out of the box.
+  # Optional CalDAV sync (Nextcloud, Radicale, iCloud, Fastmail, …):
+  # calendar:
+  #   caldav:
+  #     url: "https://nextcloud.example.com/remote.php/dav"
+  #     username: "you"
+  #     password: "app-password"
+  #     calendar: "personal"   # optional — omit to merge all calendars
 
 # Memory
 memory:
   max_history: 1000
   retention_days: 365
+
+# Plugins (optional)
+# plugins:
+#   # FastMCP — expose every SafestClaw action as a Model Context Protocol tool.
+#   # Requires: pip install fastmcp
+#   # (or, from a checkout: pip install -e ".[mcp]")
+#   fastmcp:
+#     enabled: true
+#     autostart: false           # only used for sse / streamable-http
+#     transport: "stdio"         # stdio | sse | streamable-http
+#     host: "127.0.0.1"
+#     port: 8770
+#     server_name: "safestclaw"
+#
+#   # Security scanners — wraps bandit, pip-audit, semgrep, trivy,
+#   # detect-secrets, gitleaks. No AI. Each tool is optional; install
+#   # whichever you want and the plugin auto-detects.
+#   security:
+#     allowed_paths:
+#       - "~"
+#       - "/tmp"
+#     timeout: 120                # seconds per scanner
+#     max_output: 20000           # truncate per-scanner output to N bytes
 
 # Optional API keys (for enhanced features)
 apis:

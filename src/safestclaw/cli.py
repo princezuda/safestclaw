@@ -347,12 +347,13 @@ def run(
     config: Path | None = typer.Option(None, "--config", "-c"),
     webhook: bool = typer.Option(False, "--webhook", help="Enable webhook server"),
     telegram: bool = typer.Option(False, "--telegram", help="Enable Telegram bot"),
+    web: bool = typer.Option(False, "--web", help="Enable localhost web UI"),
     verbose: bool = typer.Option(False, "--verbose"),
 ):
     """Start SafestClaw with configured channels."""
     setup_logging(verbose)
     try:
-        asyncio.run(_run_all(config, webhook, telegram))
+        asyncio.run(_run_all(config, webhook, telegram, web))
     except KeyboardInterrupt:
         pass
     finally:
@@ -364,6 +365,7 @@ async def _run_all(
     config_path: Path | None,
     enable_webhook: bool,
     enable_telegram: bool,
+    enable_web: bool = False,
 ) -> None:
     """Run all configured channels."""
     engine = create_engine(config_path)
@@ -387,6 +389,20 @@ async def _run_all(
             engine.register_channel("telegram", telegram_channel)
         else:
             console.print("[yellow]Telegram token not configured[/yellow]")
+
+    # Add localhost web UI if enabled (flag or config)
+    web_cfg = (engine.config.get("channels") or {}).get("web") or {}
+    if enable_web or web_cfg.get("enabled"):
+        from safestclaw.channels.web import WebChannel
+        try:
+            web_channel = WebChannel.from_config(engine, web_cfg)
+            engine.register_channel("web", web_channel)
+            console.print(
+                f"[green]Web UI:[/green] "
+                f"http://{web_channel.host}:{web_channel.port}"
+            )
+        except (ImportError, ValueError) as e:
+            console.print(f"[red]Could not start web UI: {e}[/red]")
 
     await engine.start()
 
@@ -729,14 +745,33 @@ def calendar(
 async def _calendar(action: str, path: Path | None, days: int) -> None:
     """Run calendar command."""
     try:
-        from safestclaw.actions.calendar import CalendarEvent, CalendarParser
+        from safestclaw.actions.calendar import CalendarParser
     except ImportError:
         console.print("[red]Calendar support not installed. Run: pip install icalendar[/red]")
         return
 
     parser = CalendarParser()
 
-    if action == "import" and path:
+    def _print_events(events, title: str) -> None:
+        if not events:
+            console.print("[yellow]No events found.[/yellow]")
+            return
+        console.print(f"[bold]{title}[/bold]\n")
+        current_date = None
+        for event in events:
+            event_date = event.start.date()
+            if event_date != current_date:
+                current_date = event_date
+                console.print(f"[cyan]{event_date.strftime('%A, %B %d')}[/cyan]")
+            time_str = "All day" if event.all_day else event.start.strftime("%H:%M")
+            console.print(f"  {time_str} - {event.summary}")
+            if event.location:
+                console.print(f"    [dim]{event.location}[/dim]")
+
+    if action == "import":
+        if not path:
+            console.print("[red]Use --file to specify an ICS file to import.[/red]")
+            return
         if not path.exists():
             console.print(f"[red]File not found: {path}[/red]")
             return
@@ -747,22 +782,42 @@ async def _calendar(action: str, path: Path | None, days: int) -> None:
             return
 
         console.print(f"[green]Imported {len(events)} events from {path.name}[/green]\n")
-
-        # Show preview
         for event in events[:10]:
             date_str = event.start.strftime("%Y-%m-%d %H:%M")
             console.print(f"  {date_str} - {event.summary}")
             if event.location:
                 console.print(f"    [dim]{event.location}[/dim]")
-
         if len(events) > 10:
             console.print(f"\n  [dim]... and {len(events) - 10} more events[/dim]")
-    else:
-        console.print("[yellow]Use --file to specify an ICS file to import.[/yellow]")
-        console.print("\nExamples:")
-        console.print("  safestclaw calendar import --file calendar.ics")
-        console.print("  safestclaw calendar today")
-        console.print("  safestclaw calendar upcoming --days 14")
+        return
+
+    if action in ("today", "upcoming", "week"):
+        if not path:
+            console.print(
+                "[yellow]Provide --file to view events from an ICS file, "
+                "or use the interactive CLI for CalDAV-synced events.[/yellow]"
+            )
+            return
+        if not path.exists():
+            console.print(f"[red]File not found: {path}[/red]")
+            return
+        events = parser.parse_file(path)
+        if action == "today":
+            _print_events(parser.get_today_events(events), "Today's Schedule")
+        else:  # upcoming or week
+            window = 7 if action == "week" else days
+            _print_events(
+                parser.get_upcoming_events(events, window),
+                f"Upcoming Events (next {window} days)",
+            )
+        return
+
+    console.print(f"[red]Unknown calendar action: {action}[/red]")
+    console.print("Available: today, upcoming, week, import")
+    console.print("\nExamples:")
+    console.print("  safestclaw calendar import --file calendar.ics")
+    console.print("  safestclaw calendar today --file calendar.ics")
+    console.print("  safestclaw calendar upcoming --file calendar.ics --days 14")
 
 
 @app.command()
@@ -976,6 +1031,148 @@ def setup(
     setup_logging(verbose)
     config_path = config or Path("config/config.yaml")
     asyncio.run(run_wizard(config_path, console))
+
+
+@app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", "--host", "-h",
+                              help="Bind host (loopback only)"),
+    port: int = typer.Option(8771, "--port", "-p", help="Port"),
+    token: str = typer.Option("", "--token", help="Optional auth token"),
+    config: Path | None = typer.Option(None, "--config", "-c"),
+    verbose: bool = typer.Option(False, "--verbose"),
+):
+    """
+    Start the localhost web UI.
+
+    Exposes the entire SafestClaw engine — every action, plugin, and
+    command — through a tiny chat interface plus a JSON API at
+    http://127.0.0.1:8771.
+    """
+    setup_logging(verbose)
+
+    async def _run() -> None:
+        engine = create_engine(config)
+        engine.load_config()
+        await engine.memory.initialize()
+
+        from safestclaw.channels.web import WebChannel
+        cfg = (engine.config.get("channels") or {}).get("web") or {}
+        try:
+            channel = WebChannel(
+                engine=engine,
+                host=host or cfg.get("host", "127.0.0.1"),
+                port=port or int(cfg.get("port", 8771)),
+                auth_token=token or cfg.get("auth_token") or None,
+                user_id=cfg.get("user_id", "web_user"),
+            )
+        except (ImportError, ValueError) as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+        engine.register_channel("web", channel)
+        console.print(
+            f"[green]SafestClaw web UI:[/green] "
+            f"http://{channel.host}:{channel.port}"
+            + ("  (token required)" if channel.auth_token else "")
+        )
+        try:
+            await channel.start()
+        except KeyboardInterrupt:
+            await channel.stop()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        pass
+
+
+@app.command()
+def security(
+    subcommand: str = typer.Argument(
+        "tools",
+        help="tools | scan | bandit | pip-audit | safety | semgrep | trivy | "
+             "secrets | gitleaks | help",
+    ),
+    path: Path | None = typer.Argument(None, help="Target path (when needed)"),
+    config: Path | None = typer.Option(None, "--config", "-c"),
+    verbose: bool = typer.Option(False, "--verbose"),
+):
+    """
+    Run deterministic security scanners (bandit, pip-audit, semgrep, trivy,
+    detect-secrets, gitleaks). No AI required.
+    """
+    setup_logging(verbose)
+    from safestclaw.plugins.official.security import SecurityPlugin
+
+    async def _run() -> None:
+        engine = create_engine(config)
+        engine.load_config()
+        plugin = SecurityPlugin()
+        plugin.on_load(engine)
+
+        raw = subcommand if path is None else f"{subcommand} {path}"
+        result = await plugin.execute(
+            params={"raw_input": f"security {raw}"},
+            user_id="cli",
+            channel="cli",
+            engine=engine,
+        )
+        console.print(result)
+
+    asyncio.run(_run())
+
+
+@app.command()
+def mcp(
+    transport: str = typer.Option(
+        "stdio", "--transport", "-t",
+        help="MCP transport: stdio (default), sse, streamable-http",
+    ),
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="HTTP host"),
+    port: int = typer.Option(8770, "--port", "-p", help="HTTP port"),
+    server_name: str = typer.Option(
+        "safestclaw", "--name", help="Name advertised to MCP clients"
+    ),
+    config: Path | None = typer.Option(None, "--config", "-c"),
+    verbose: bool = typer.Option(False, "--verbose"),
+):
+    """
+    Run a Model Context Protocol server that exposes SafestClaw actions as tools.
+
+    Use stdio (default) when an MCP client (Claude Desktop, IDE extensions, …)
+    spawns SafestClaw as a subprocess. Use sse or streamable-http to expose
+    actions over HTTP.
+    """
+    setup_logging(verbose)
+    try:
+        from safestclaw.core.mcp_server import HAS_FASTMCP, serve_mcp
+    except Exception as e:
+        console.print(f"[red]Could not load MCP module: {e}[/red]")
+        raise typer.Exit(1)
+
+    if not HAS_FASTMCP:
+        console.print(
+            "[red]fastmcp not installed.[/red] Install with: "
+            "[bold]pip install fastmcp[/bold] "
+            "(or, from a checkout: [bold]pip install -e \".[mcp]\"[/bold])"
+        )
+        raise typer.Exit(1)
+
+    async def _run() -> None:
+        engine = create_engine(config)
+        engine.load_config()
+        await serve_mcp(
+            engine,
+            transport=transport,
+            host=host,
+            port=port,
+            server_name=server_name,
+        )
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        pass
 
 
 DEFAULT_CONFIG = """# SafestClaw Configuration

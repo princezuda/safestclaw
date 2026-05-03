@@ -6,6 +6,54 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Localhost web UI** — drive the entire SafestClaw engine from a browser.
+  - Single-page chat interface served at `http://127.0.0.1:8771/` (no
+    CDNs, no JS framework, no external assets)
+  - JSON API: `GET /api/health`, `GET /api/actions`, `GET /api/help`,
+    `POST /api/message`, `GET /api/history`
+  - Loopback bind enforced at construction (refuses `0.0.0.0` etc.)
+  - Optional `auth_token` for shared dev boxes (Bearer or
+    `X-SafestClaw-Token` header)
+  - New `safestclaw web` CLI; `safestclaw run --web` to run alongside
+    other channels
+  - Setup wizard now offers a web-UI step
+- **Security plugin** — wraps deterministic security scanners (bandit,
+  pip-audit, safety, semgrep, trivy, detect-secrets, gitleaks) as a
+  SafestClaw action. No AI required.
+  - Chat commands: `security tools`, `security scan [path]`,
+    `security bandit [path]`, `security pip-audit`, `security semgrep
+    [path]`, `security trivy [path]`, `security secrets [path]`,
+    `security gitleaks [path]`
+  - CLI: `safestclaw security <subcommand> [path]`
+  - Each scanner is optional — the plugin auto-detects what's installed
+    and prints install hints for the rest
+  - Subprocess invocation uses `create_subprocess_exec` (no shell);
+    paths are restricted to `plugins.security.allowed_paths`
+- **FastMCP plugin** — every SafestClaw action is now optionally exposed as a
+  Model Context Protocol tool, so MCP-aware clients (Claude Desktop, IDE
+  extensions, agents) can call them directly.
+  - New optional dep: `pip install fastmcp` (or, from a checkout, `pip install -e ".[mcp]"`)
+  - New plugin at `plugins/official/fastmcp_server.py`
+  - New CLI: `safestclaw mcp [--transport stdio|sse|streamable-http]`
+  - Setup wizard now offers an MCP step
+  - Chat commands: `mcp status`, `mcp start <transport>`, `mcp stop`,
+    `mcp tools`
+- **CalDAV calendar sync** — finishes the previously stubbed CalDAV path.
+  - `calendar sync` pulls events from a configured CalDAV server
+    (Nextcloud, Radicale, iCloud, Fastmail, …)
+  - `calendar calendars` lists calendars on the server
+  - Config under `actions.calendar.caldav`
+- **Calendar subcommand routing** — `calendar today`, `calendar upcoming N`,
+  `calendar week`, `calendar import <path>` now work from the chat interface
+  (the parser used to drop the subcommand).
+- **Calendar CLI parity** — `safestclaw calendar today/upcoming/week --file
+  cal.ics` now actually renders events instead of printing help.
+
+---
+
 ## [0.3.2] - 2026-03-12 — 100-Star Milestone
 
 ### Added
