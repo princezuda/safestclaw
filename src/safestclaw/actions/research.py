@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 from safestclaw.actions.base import BaseAction
 from safestclaw.core.crawler import Crawler
 from safestclaw.core.feeds import FeedReader
+from safestclaw.core.parser import is_conversational, strip_conversational
 from safestclaw.core.research_sources import (
     KnowledgeResult,
     query_wolfram_alpha,
@@ -124,7 +125,12 @@ class ResearchAction(BaseAction):
     ) -> str:
         """Execute research action."""
         self._initialize(engine)
-        raw = params.get("raw_input", "").strip()
+        original = params.get("raw_input", "").strip()
+        # Strip conversational fillers ("hey man, id like to ...") before
+        # source detection and query extraction. We keep the original
+        # around so the friendly-acknowledgment heuristic can still see
+        # the politeness markers.
+        raw = strip_conversational(original)
 
         # Parse subcommand
         lower = raw.lower()
@@ -138,23 +144,33 @@ class ResearchAction(BaseAction):
                 return await self._research_url(urls[0], user_id, engine)
             return "Please provide a URL: research url https://example.com"
 
-        if "research arxiv" in lower:
-            query = raw.split("arxiv", 1)[-1].strip()
-            if query:
-                return await self._search_arxiv(query, user_id)
-            return "Please provide a query: research arxiv quantum computing"
-
-        if "research scholar" in lower:
-            query = raw.split("scholar", 1)[-1].strip()
-            if query:
-                return await self._search_scholar(query, user_id)
-            return "Please provide a query: research scholar machine learning"
-
-        if "research wolfram" in lower:
-            query = raw.split("wolfram", 1)[-1].strip()
-            if query:
-                return await self._search_wolfram(query, user_id, engine)
-            return "Please provide a query: research wolfram integrate x^2"
+        # Source-aware routing: if the user mentions arxiv / scholar /
+        # wolfram anywhere in the text, pull out the topic and dispatch
+        # to the matching specialist. This catches both the strict form
+        # ("research arxiv quantum computing") and conversational input
+        # ("hey man, id like to research, let's try arxiv quantum
+        # computing") — the parser already stripped the politeness, but
+        # the source word might still appear after "research" rather
+        # than directly adjacent to it.
+        source = self._detect_source(lower)
+        if source:
+            query = self._extract_query(raw, source)
+            casual = self._is_conversational(original)
+            if source == "arxiv":
+                if query:
+                    body = await self._search_arxiv(query, user_id)
+                    return self._with_ack("arxiv", query, body, casual)
+                return "Please provide a query: research arxiv quantum computing"
+            if source == "scholar":
+                if query:
+                    body = await self._search_scholar(query, user_id)
+                    return self._with_ack("scholar", query, body, casual)
+                return "Please provide a query: research scholar machine learning"
+            if source == "wolfram":
+                if query:
+                    body = await self._search_wolfram(query, user_id, engine)
+                    return self._with_ack("wolfram", query, body, casual)
+                return "Please provide a query: research wolfram integrate x^2"
 
         if "research select" in lower:
             numbers = re.findall(r'\d+', raw.split("select", 1)[-1])
@@ -172,17 +188,131 @@ class ResearchAction(BaseAction):
         if "research results" in lower:
             return self._show_results(user_id)
 
-        # Default: start research on a topic
+        # Default: start research on a topic. Strip the leading verb
+        # plus any tiny connectives so "research about quantum
+        # computing" yields the topic "quantum computing" — not
+        # "about quantum computing".
         topic = raw
-        for prefix in ["research", "look up", "find out about", "search for"]:
+        for prefix in (
+            "find out about", "look up", "search for papers on",
+            "search for", "search", "investigate", "research",
+        ):
             if lower.startswith(prefix):
                 topic = raw[len(prefix):].strip()
                 break
+        topic = re.sub(
+            r"^(?:on|for|about)\s+", "", topic, flags=re.IGNORECASE
+        ).strip(" ,.;:")
 
         if topic:
-            return await self._start_research(topic, user_id, engine)
+            casual = self._is_conversational(original)
+            body = await self._start_research(topic, user_id, engine)
+            return self._with_ack("all", topic, body, casual)
 
         return self._help()
+
+    # ------------------------------------------------------------------
+    # Conversational input helpers
+    # ------------------------------------------------------------------
+
+    # Words/phrases that signal which source the user wants. The parser
+    # already strips polite prefixes ("hey man, id like to", "let's try"),
+    # so by the time we get here the input is something like
+    # "research arxiv quantum computing", "research quantum computing
+    # arxiv", "arxiv quantum computing", or "research quantum computing
+    # using arxiv".
+    _SOURCE_ALIASES: dict[str, list[str]] = {
+        "arxiv": ["arxiv", "arxiv.org"],
+        "scholar": ["semantic scholar", "scholar"],
+        "wolfram": ["wolfram alpha", "wolfram"],
+    }
+
+    _ACK_LABEL: dict[str, str] = {
+        "arxiv": "arXiv",
+        "scholar": "Semantic Scholar",
+        "wolfram": "Wolfram Alpha",
+        "all": "arXiv, Semantic Scholar, and Wolfram Alpha",
+    }
+
+    def _is_conversational(self, raw: str) -> bool:
+        """Thin wrapper so action callsites stay readable."""
+        return is_conversational(raw)
+
+    def _with_ack(
+        self,
+        source: str,
+        query: str,
+        body: str,
+        conversational: bool,
+    ) -> str:
+        """Prepend a friendly intro line when the input was conversational.
+        Power users issuing the strict form ("research arxiv X") get the
+        dense output untouched."""
+        if not conversational or not body:
+            return body
+        label = self._ACK_LABEL.get(source, source)
+        clean_query = (query or "").strip().strip('"').strip("'")
+        if not clean_query:
+            return body
+        ack = f"On it — searching {label} for **{clean_query}**…\n\n"
+        return ack + body
+
+    def _detect_source(self, lowered: str) -> str | None:
+        """Return the source key (arxiv/scholar/wolfram) mentioned in
+        the input, preferring the longest match so 'semantic scholar'
+        beats a stray 'scholar' inside another word."""
+        best: tuple[str, int] | None = None
+        for source, aliases in self._SOURCE_ALIASES.items():
+            for alias in aliases:
+                # Word-boundary match so "scholar" doesn't fire inside
+                # "scholarly" — and so the alias must appear as a real
+                # token, not a substring of an unrelated word.
+                if re.search(rf"\b{re.escape(alias)}\b", lowered):
+                    if best is None or len(alias) > best[1]:
+                        best = (source, len(alias))
+        return best[0] if best else None
+
+    def _extract_query(self, raw: str, source: str) -> str:
+        """
+        Pull the actual search query out of free-form input. Removes the
+        leading verb ("research", "look up", "find papers on", etc.),
+        the source name ("arxiv"/"scholar"/"wolfram"/aliases), and tiny
+        connectives ("on", "for", "about", "using", "via", "with").
+        """
+        text = raw.strip()
+        lowered = text.lower()
+
+        # Drop the leading verb phrase if present.
+        for verb in (
+            "research arxiv", "research scholar", "research wolfram",
+            "research", "look up", "find out about",
+            "find papers on", "find papers about",
+            "search for papers on", "search for", "search",
+            "investigate",
+        ):
+            if lowered.startswith(verb):
+                text = text[len(verb):].strip()
+                lowered = text.lower()
+                break
+
+        # Drop every alias of the chosen source (longest first so
+        # "semantic scholar" is removed before "scholar"). Treat them
+        # as whole words.
+        aliases = sorted(self._SOURCE_ALIASES[source], key=len, reverse=True)
+        for alias in aliases:
+            text = re.sub(
+                rf"\b{re.escape(alias)}\b", " ", text, flags=re.IGNORECASE
+            )
+
+        # Strip tiny connectives that often sit between the source and
+        # the topic ("research arxiv for quantum computing").
+        text = re.sub(
+            r"\b(?:on|for|about|using|via|with|please)\b",
+            " ", text, flags=re.IGNORECASE,
+        )
+        text = re.sub(r"\s{2,}", " ", text).strip(" ,.;:")
+
+        return text
 
     async def _start_research(
         self,

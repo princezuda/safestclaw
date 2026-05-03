@@ -13,7 +13,7 @@ from typing import Any
 import yaml
 
 from safestclaw.core.memory import Memory
-from safestclaw.core.parser import CommandParser
+from safestclaw.core.parser import CommandParser, friendly_intro, is_conversational
 from safestclaw.core.scheduler import Scheduler
 
 logger = logging.getLogger(__name__)
@@ -219,7 +219,7 @@ class SafestClaw:
                             f"_last_failed:{user_id}", "", ttl_seconds=1
                         )
 
-                return result
+                return self._maybe_acknowledge(text, parsed.intent, result)
             except Exception as e:
                 logger.error(f"Action failed: {e}")
                 return f"Sorry, that action failed: {e}"
@@ -339,6 +339,35 @@ class SafestClaw:
             if len(results) == 1:
                 return results[0]
             return "\n\n---\n\n".join(results)
+
+    # Prefixes that mean "the action already added its own friendly
+    # opener, so the engine should skip its generic one." Keeps the
+    # research action's source-aware "On it — searching arXiv for X…"
+    # from getting double-wrapped.
+    _ACK_SKIP_PREFIXES: tuple[str, ...] = (
+        "On it", "Got it", "Sure", "Here's", "Will do", "📅",
+    )
+
+    def _maybe_acknowledge(
+        self,
+        original_text: str,
+        intent: str | None,
+        response: str,
+    ) -> str:
+        """Prepend a friendly per-intent intro when the user typed a
+        sentence rather than a command. Skipped for empty responses,
+        the help intent, and responses that already open with their own
+        acknowledgment."""
+        if not response or not intent:
+            return response
+        if not is_conversational(original_text):
+            return response
+        if any(response.lstrip().startswith(p) for p in self._ACK_SKIP_PREFIXES):
+            return response
+        intro = friendly_intro(intent)
+        if not intro:
+            return response
+        return f"{intro}\n\n{response}"
 
     async def _execute_action(
         self,
