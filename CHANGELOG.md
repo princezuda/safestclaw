@@ -9,6 +9,27 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 ## [Unreleased]
 
 ### Added
+- **Blog publishing — preview, custom HTML template, subfolder, repeat
+  last target.**
+  - `preview blog [to <target>]` renders the exact HTML that would be
+    uploaded and saves a copy under `<blog_dir>/previews/<slug>.html`
+    so you can open it in a browser before publishing
+  - In a pending-publish flow, `preview` shows the rendered HTML before
+    you confirm
+  - `publish blog again` / `publish blog to here` repeats the last
+    successful target — the action remembers it per-user via engine
+    memory
+  - `PublishTarget.html_template` (inline) and `html_template_path`
+    (file) — placeholders: `{title}`, `{content}`, `{excerpt}`,
+    `{date}`, `{slug}`. When unset the built-in default template is
+    used. Bad placeholders fall back to the default rather than crash
+  - `PublishTarget.sftp_subfolder` — appended under
+    `sftp_remote_path` so each post uploads to
+    `{remote_path}/{subfolder}/<slug>.html`. The setup-publish chat
+    command picks it up from a trailing `subfolder=blog/posts` token;
+    the standalone CLI takes `--sftp-subfolder` and `--html-template`
+  - New CLI flag: `safestclaw publish --preview` prints the HTML
+    without uploading
 - **Conversational input handling.** SafestClaw now recognises
   sentence-style requests, not just terse commands.
   - Parser strips "hey claw, please", "id like to", "lets try", "can you",

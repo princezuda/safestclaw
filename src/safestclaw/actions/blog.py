@@ -212,6 +212,10 @@ class BlogAction(BaseAction):
         # Publishing commands
         if self._is_setup_publish(lower):
             return await self._setup_publish(raw_input, user_id, engine)
+        if self._is_preview(lower):
+            return await self._preview_blog(raw_input, user_id, engine)
+        if self._is_publish_again(lower):
+            return await self._publish_again(user_id, engine)
         if self._is_publish_remote(lower):
             return await self._publish_remote(raw_input, user_id)
         if self._is_list_targets(lower):
@@ -326,7 +330,9 @@ class BlogAction(BaseAction):
             return await self._handle_review(raw_input, lower, user_id, engine)
 
         elif state == SESSION_PENDING_PUBLISH:
-            return await self._handle_pending_publish(session, raw_input, lower, user_id)
+            return await self._handle_pending_publish(
+                session, raw_input, lower, user_id, engine,
+            )
 
         return None
 
@@ -661,6 +667,24 @@ class BlogAction(BaseAction):
             text,
         ))
 
+    def _is_preview(self, text: str) -> bool:
+        """Match `preview blog`, `preview blog to <target>`, `show preview`."""
+        return bool(re.search(
+            r"^(?:preview|render)\s+(?:blog|the\s+blog|post)\b|"
+            r"^show\s+preview\b|"
+            r"^(?:preview|render)\s*$",
+            text,
+        ))
+
+    def _is_publish_again(self, text: str) -> bool:
+        """Match `publish blog again`, `publish again`, `republish`, `publish blog to here`."""
+        return bool(re.search(
+            r"^(?:publish|upload|deploy)\s+(?:blog\s+)?again\b|"
+            r"^republish(?:\s+blog)?\b|"
+            r"^publish\s+(?:blog\s+)?to\s+(?:here|same|last|previous)\b",
+            text,
+        ))
+
     def _is_setup_publish(self, text: str) -> bool:
         return bool(re.search(
             r"setup\s+(blog\s+)?publish|"
@@ -961,6 +985,17 @@ class BlogAction(BaseAction):
         if not target:
             return self._setup_publish_help()
 
+        # SFTP-only convenience: pull a trailing "/subfolder=..." or
+        # "subfolder <path>" off the raw input so users can register
+        # `sftp://host user pass /var/www/html subfolder=blog/posts`.
+        if target.target_type == PublishTargetType.SFTP:
+            sub_m = re.search(
+                r"(?:subfolder|folder|sub)\s*[=:]?\s*([\w\-/]+)",
+                raw_input, re.IGNORECASE,
+            )
+            if sub_m:
+                target.sftp_subfolder = sub_m.group(1).strip("/")
+
         # Save to config.yaml for persistence
         saved = self._save_publish_target_to_config(target, engine)
 
@@ -1233,16 +1268,27 @@ class BlogAction(BaseAction):
         raw_input: str,
         lower: str,
         user_id: str,
+        engine: "SafestClaw | None" = None,
     ) -> str | None:
         """Handle input while a publish is staged and awaiting confirmation."""
         stripped = lower.strip()
+
+        # Show the full HTML render before confirming
+        if stripped in ("preview", "show preview", "render", "show me"):
+            target_label = session.get("target_label")
+            preview_input = "preview blog" + (
+                f" to {target_label}" if target_label else ""
+            )
+            return await self._preview_blog(preview_input, user_id, engine)
 
         # Confirm → publish
         if stripped in ("confirm", "yes", "publish", "publish it", "go", "send it", "do it"):
             title = session.get("pending_title", "Untitled Blog Post")
             target_label = session.get("target_label")
             self._clear_session(user_id)
-            return await self._do_publish(title, target_label, user_id)
+            return await self._do_publish(
+                title, target_label, user_id, engine=engine,
+            )
 
         # Change title
         title_match = re.match(r'(?:change\s+)?(?:set\s+)?title\s+(.+)', stripped)
@@ -1278,6 +1324,7 @@ class BlogAction(BaseAction):
         target_info = session.get("target_label") or "all configured targets"
         return (
             f"**Pending publish** — \"{title}\" → {target_info}\n\n"
+            f"  **preview**                    - See the full HTML before sending\n"
             f"  **confirm**                    - Publish now\n"
             f"  **change title** <new title>   - Rename\n"
             f"  **edit blog** <content>        - Edit content (cancels pending publish)\n"
@@ -1289,6 +1336,7 @@ class BlogAction(BaseAction):
         title: str,
         target_label: str | None,
         user_id: str,
+        engine: "SafestClaw | None" = None,
     ) -> str:
         """Execute the actual remote publish after confirmation."""
         if not self.publisher or not self.publisher.targets:
@@ -1339,9 +1387,156 @@ class BlogAction(BaseAction):
                 lines.append(f"  {r.target_label} ({r.target_type}): FAILED - {r.error}")
 
         if any_success:
+            # Remember the last successful target so `publish blog again`
+            # / `publish blog to here` repeats it without retyping.
+            if engine is not None and target_label:
+                try:
+                    await engine.memory.set(
+                        f"{self._LAST_TARGET_KEY}:{user_id}",
+                        target_label,
+                    )
+                except Exception:
+                    pass
             lines.extend(["", "Use 'set front page <post_id> on <target>' to feature this post."])
+            lines.extend([
+                "",
+                "Tip: type **publish blog again** to repeat this publish next time."
+            ])
 
         return "\n".join(lines)
+
+    # ──────────────────────────────────────────────────────────────────
+    # Preview & saved-target helpers
+    # ──────────────────────────────────────────────────────────────────
+
+    _LAST_TARGET_KEY = "blog_last_target"
+
+    async def _preview_blog(
+        self,
+        raw_input: str,
+        user_id: str,
+        engine: "SafestClaw",
+    ) -> str:
+        """
+        Render the exact HTML that would be uploaded for the chosen
+        target (or the first target / inline target). Useful for
+        "see the full thing before publishing".
+        """
+        draft_path = self._get_draft_path(user_id)
+        if not draft_path.exists():
+            return "No blog draft yet. Write something first with `write blog news ...`."
+        content = self._get_entries_text(draft_path.read_text())
+        if not content.strip():
+            return "Blog draft is empty. Add some entries first."
+
+        title = self._derive_title(content)
+
+        # Pick a target: explicit "preview blog to <label>" wins, then
+        # last-used, then first configured.
+        target_label = None
+        m = re.search(r"to\s+(\S+)", raw_input, re.IGNORECASE)
+        if m:
+            target_label = m.group(1).strip()
+
+        if not target_label:
+            try:
+                target_label = await engine.memory.get(
+                    f"{self._LAST_TARGET_KEY}:{user_id}"
+                )
+            except Exception:
+                target_label = None
+
+        if not self.publisher:
+            self.publisher = BlogPublisher.from_config(engine.config or {})
+
+        excerpt = content[:160].strip()
+        slug = re.sub(r"[^\w\s-]", "", title)[:50].strip().replace(" ", "-").lower()
+
+        html, target = self.publisher.render_preview(
+            title=title,
+            content=content,
+            excerpt=excerpt,
+            slug=slug,
+            target_label=target_label,
+        )
+
+        # Trim the HTML to a reasonable preview size — point users at the
+        # local file for the full render if it's huge.
+        max_chars = 4000
+        truncated = len(html) > max_chars
+        body = html[:max_chars]
+        target_label_str = target.label if target else "(default template — no target)"
+
+        upload_path = ""
+        if target and target.target_type == PublishTargetType.SFTP:
+            upload_path = (
+                f"{target.remote_dir()}/"
+                f"{datetime.now().strftime('%Y-%m-%d')}-{slug}.html"
+            )
+
+        # Save the rendered HTML to the user's blog dir so they can open
+        # it in a browser to see the full thing.
+        preview_dir = self.blog_dir / "previews"
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        preview_file = preview_dir / f"{slug or 'preview'}.html"
+        try:
+            preview_file.write_text(html)
+        except OSError:
+            preview_file = None  # type: ignore[assignment]
+
+        lines = [
+            f"**Preview — {title}**",
+            f"Target: {target_label_str}"
+            + (f"  →  {upload_path}" if upload_path else ""),
+            "",
+            "```html",
+            body,
+        ]
+        if truncated:
+            lines.append("... (truncated — preview saved to file)")
+        lines.append("```")
+        if preview_file:
+            lines.extend([
+                "",
+                f"Full preview saved: {preview_file}",
+            ])
+        lines.extend([
+            "",
+            "Next:",
+            f"  `publish blog{(' to ' + target_label) if target_label else ''}` "
+            "to send it",
+            "  `cancel` to keep the draft and skip publishing",
+        ])
+        return "\n".join(lines)
+
+    async def _publish_again(
+        self,
+        user_id: str,
+        engine: "SafestClaw",
+    ) -> str:
+        """Repeat the last successful publish for this user."""
+        try:
+            last = await engine.memory.get(f"{self._LAST_TARGET_KEY}:{user_id}")
+        except Exception:
+            last = None
+        if not last:
+            return (
+                "No previous publish to repeat. "
+                "Use `publish blog to <target>` first."
+            )
+
+        draft_path = self._get_draft_path(user_id)
+        if not draft_path.exists():
+            return "No blog draft to publish."
+
+        title = self._derive_title(self._get_entries_text(draft_path.read_text()))
+        return await self._do_publish(title, last, user_id, engine=engine)
+
+    @staticmethod
+    def _derive_title(content: str) -> str:
+        """Best-effort title from the draft's first line."""
+        first = (content.split("\n", 1)[0] or "").strip().lstrip("#").strip()
+        return first[:80] or "Untitled Blog Post"
 
     @staticmethod
     def _parse_inline_target(raw_input: str) -> PublishTarget | None:
@@ -1357,11 +1552,25 @@ class BlogAction(BaseAction):
           publish blog to joomla://mysite.com username password
           publish blog to api://mysite.com/endpoint api_key
         """
-        # Match scheme://... followed by optional tokens
+        # Strip optional trailing "subfolder=..." token before regex matching
+        # so it doesn't get captured as the remote path. The setup_publish
+        # caller pulls subfolder out separately and applies it on the target.
+        text = re.sub(
+            r"\s+(?:subfolder|folder|sub)\s*[=:]?\s*[\w\-/]+\s*$",
+            "", raw_input.strip(), flags=re.IGNORECASE,
+        )
+
+        # Match scheme://... followed by optional tokens. Accepts
+        # "publish/upload/deploy/push blog to …" (the runtime form) and
+        # "setup blog publish …" / "save blog publish …" (the
+        # configure-once form).
         m = re.search(
+            r'(?:'
             r'(?:publish|upload|deploy|push)\s+(?:blog\s+)?to\s+'
+            r'|(?:setup|save|add|store)\s+(?:blog\s+)?publish\s+(?:blog\s+)?'
+            r')'
             r'(sftp|wp|wordpress|joomla|api)://([\S]+?)(?:\s+(\S+)(?:\s+(\S+)(?:\s+(\S+))?)?)?$',
-            raw_input.strip(), re.IGNORECASE,
+            text, re.IGNORECASE,
         )
         if not m:
             return None

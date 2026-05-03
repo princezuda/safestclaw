@@ -885,6 +885,19 @@ def publish(
     sftp_password: str = typer.Option("", "--sftp-password", help="SFTP password"),
     sftp_key: str = typer.Option("", "--sftp-key", help="Path to SSH private key"),
     sftp_path: str = typer.Option("/var/www/html/blog", "--sftp-path", help="Remote directory"),
+    sftp_subfolder: str = typer.Option(
+        "", "--sftp-subfolder",
+        help="Subdirectory under --sftp-path (e.g. 'blog' or 'posts/2026')",
+    ),
+    html_template_path: str = typer.Option(
+        "", "--html-template",
+        help="Path to a custom HTML template (placeholders: "
+             "{title}, {content}, {excerpt}, {date}, {slug})",
+    ),
+    preview: bool = typer.Option(
+        False, "--preview",
+        help="Render the HTML and print it without uploading",
+    ),
     config: Path | None = typer.Option(None, "--config", help="Config file path"),
     verbose: bool = typer.Option(False, "--verbose"),
 ):
@@ -901,6 +914,9 @@ def publish(
         sftp_password=sftp_password,
         sftp_key=sftp_key,
         sftp_path=sftp_path,
+        sftp_subfolder=sftp_subfolder,
+        html_template_path=html_template_path,
+        preview=preview,
         config_path=config,
     ))
 
@@ -916,6 +932,9 @@ async def _publish(
     sftp_password: str,
     sftp_key: str,
     sftp_path: str,
+    sftp_subfolder: str,
+    html_template_path: str,
+    preview: bool,
     config_path: Path | None,
 ) -> None:
     """Run a non-interactive publish to SFTP or configured targets."""
@@ -960,8 +979,14 @@ async def _publish(
             sftp_password=sftp_password,
             sftp_key_path=sftp_key,
             sftp_remote_path=sftp_path,
+            sftp_subfolder=sftp_subfolder,
+            html_template_path=html_template_path,
         )
         publisher.add_target(inline)
+    elif html_template_path and publisher.targets:
+        # Apply the template to whatever target is being used.
+        first = next(iter(publisher.targets.values()))
+        first.html_template_path = html_template_path
 
     if not publisher.targets:
         console.print(
@@ -972,6 +997,15 @@ async def _publish(
 
     slug = re.sub(r"[^\w\s-]", "", title)[:50].strip().replace(" ", "-").lower()
     excerpt = body[:160].strip()
+
+    if preview:
+        html, t = publisher.render_preview(
+            title=title, content=body, excerpt=excerpt,
+            slug=slug, target_label=target,
+        )
+        console.print(f"[dim]Preview for {t.label if t else 'default'}:[/dim]")
+        console.print(html)
+        return
 
     console.print(f"[dim]Publishing \"{title}\" → {target or 'all targets'}…[/dim]")
 

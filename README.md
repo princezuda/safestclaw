@@ -189,6 +189,12 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **Status check** — `setup ai status` shows what's configured
 * **Zero config files** — No YAML editing needed, the command does it for you
 
+### 📤 Blog Publishing — Preview, Templates, Repeat
+* **Preview before publishing** — `preview blog [to <target>]` renders the exact HTML that would be uploaded and saves a copy locally so you can open it in a browser
+* **Custom HTML template per target** — set `html_template` (inline) or `html_template_path` (file) on a `publish_targets` entry; placeholders: `{title}`, `{content}`, `{excerpt}`, `{date}`, `{slug}`
+* **Subfolder per site** — `sftp_subfolder: "blog"` (or set inline with `subfolder=blog/posts` on the setup command) so each post uploads to `{remote_path}/{subfolder}/<slug>.html`
+* **Repeat last publish** — `publish blog again` or `publish blog to here` reuses the last successful target, no retyping
+
 ### 💬 Conversational Input
 * **Talk naturally** — "hey claw, lets publish this blog" works the same as `publish blog`
 * **Friendly acknowledgments** — every intent gets a short, intent-aware intro when you phrase things conversationally ("Got it — wiring up the auto-blog…", "Sure — checking your calendar…")
