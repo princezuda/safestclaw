@@ -23,10 +23,10 @@ try:
     from safestclaw.core.nlp import NLPProcessor
     __all__.append("NLPProcessor")
 except ImportError:
-    pass  # pip install spacy langdetect  (or, from a checkout: pip install -e ".[nlp]")
+    pass  # pip install safestclaw[nlp]
 
 try:
     from safestclaw.core.vision import ObjectDetector, OCRProcessor, VisionProcessor
     __all__.extend(["VisionProcessor", "ObjectDetector", "OCRProcessor"])
 except ImportError:
-    pass  # pip install ultralytics pytesseract  (or, from a checkout: pip install -e ".[vision]")
+    pass  # pip install safestclaw[vision]

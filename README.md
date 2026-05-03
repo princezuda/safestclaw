@@ -134,7 +134,7 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 
 ### 📅 Calendar Support
 * **ICS Files** — Import and parse .ics calendar files
-* **CalDAV** — Sync from Nextcloud, Radicale, iCloud, Fastmail, Google (`pip install caldav` — or, from a checkout, `pip install -e ".[caldav]"`)
+* **CalDAV** — Sync from Nextcloud, Radicale, iCloud, Fastmail, Google (`pip install safestclaw[caldav]`)
 * **Event filtering** — Today, upcoming, by date range
 * **Chat commands** — `calendar today`, `calendar upcoming 14`, `calendar import ~/cal.ics`, `calendar sync`, `calendar calendars`
 
@@ -173,7 +173,7 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **Transports** — `stdio` (Claude Desktop, IDE extensions), `sse`, `streamable-http`
 * **Run as a subprocess** — `safestclaw mcp` (the format MCP clients spawn)
 * **In-process HTTP** — enable `plugins.fastmcp.autostart` to expose a SSE/HTTP server when SafestClaw boots
-* **Opt-in** — `pip install fastmcp` (or, from a checkout, `pip install -e ".[mcp]"`), then enable in the setup wizard or `config.yaml`
+* **Opt-in** — `pip install safestclaw[mcp]`, then enable in the setup wizard or `config.yaml`
 
 ### 🔬 Real Research Sources
 * **arXiv** — Search academic papers across CS, math, physics, biology, and more (free, no API key)
@@ -307,13 +307,18 @@ handled entirely locally with zero tokens consumed.
 
 ## Installation
 
-> **Heads up — name collision on PyPI.** The `safestclaw` name on PyPI is held by
-> an unrelated project. Running `pip install safestclaw` or `pipx install safestclaw`
-> will install that other package and crash with `ModuleNotFoundError: No module
-> named 'fcntl'` on Windows (issue #33). Install from this Git repo instead, as
-> shown below.
+### From PyPI (recommended)
 
-### Using pipx (recommended)
+```bash
+pip install safestclaw                  # core
+pip install "safestclaw[mcp]"           # + FastMCP plugin (Model Context Protocol)
+pip install "safestclaw[caldav]"        # + CalDAV calendar sync
+pip install "safestclaw[telegram]"      # + Telegram bot channel
+pip install "safestclaw[smarthome]"     # + Philips Hue / Home Assistant MQTT
+pip install "safestclaw[all]"           # everything except heavy ML deps
+```
+
+### Using pipx (isolated CLI install)
 
 ```bash
 # Install pipx if needed
@@ -325,16 +330,14 @@ brew install pipx
 python -m pip install --user pipx
 python -m pipx ensurepath
 
-pipx ensurepath
-
-# Install SafestClaw from this repo
-pipx install git+https://github.com/princezuda/safestclaw.git
+pipx install safestclaw
+# or with extras:
+pipx install "safestclaw[mcp,caldav]"
 ```
 
-### Using pip with virtual environment
+### Inside a virtual environment
 
 ```bash
-# Create and activate venv
 # Linux/macOS:
 python3 -m venv ~/.safestclaw-venv
 source ~/.safestclaw-venv/bin/activate
@@ -342,16 +345,16 @@ source ~/.safestclaw-venv/bin/activate
 python -m venv $HOME\.safestclaw-venv
 $HOME\.safestclaw-venv\Scripts\Activate.ps1
 
-# Install SafestClaw from this repo
-pip install git+https://github.com/princezuda/safestclaw.git
+pip install safestclaw
 ```
 
-### From source
+### From source (for contributors)
 
 ```bash
 git clone https://github.com/princezuda/safestclaw.git
 cd safestclaw
-pip install -e .
+pip install -e ".[dev]"
+pytest -q                       # 336 passed, 1 skipped
 ```
 
 ### Optional ML Features

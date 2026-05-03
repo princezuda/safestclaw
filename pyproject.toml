@@ -1,9 +1,10 @@
 [project]
 name = "safestclaw"
-version = "0.3.2"
+version = "0.4.1"
 description = "A privacy-first personal automation assistant - no GenAI required, optional AI for blogging, research, and coding"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [
     {name = "SafestClaw Contributors"}
@@ -12,12 +13,13 @@ keywords = ["automation", "assistant", "privacy", "self-hosted", "webhook", "cra
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Home Automation",
 ]
 

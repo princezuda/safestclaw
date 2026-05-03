@@ -105,10 +105,7 @@ class FastMCPPlugin(BasePlugin):
         from safestclaw.core.mcp_server import HAS_FASTMCP, serve_mcp
 
         if not HAS_FASTMCP:
-            return (
-                "FastMCP is not installed. Run: pip install fastmcp "
-                "(or, from a checkout: pip install -e \".[mcp]\")"
-            )
+            return "FastMCP is not installed. Run: pip install safestclaw[mcp]"
 
         if self._task and not self._task.done():
             return f"MCP server already running ({self._transport})."
@@ -178,8 +175,7 @@ class FastMCPPlugin(BasePlugin):
 
         if not HAS_FASTMCP:
             return (
-                "FastMCP is not installed. Run: pip install fastmcp "
-                "(or, from a checkout: pip install -e \".[mcp]\")\n"
+                "FastMCP is not installed. Run: pip install safestclaw[mcp]\n"
                 "Then enable in config.yaml under plugins.fastmcp."
             )
         running = bool(self._task and not self._task.done())

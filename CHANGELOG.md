@@ -6,7 +6,7 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 
 ---
 
-## [Unreleased]
+## [0.4.1] - 2026-05-03 — first PyPI release
 
 ### Added
 - **Blog publishing — preview, custom HTML template, subfolder, repeat
@@ -80,7 +80,7 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 - **FastMCP plugin** — every SafestClaw action is now optionally exposed as a
   Model Context Protocol tool, so MCP-aware clients (Claude Desktop, IDE
   extensions, agents) can call them directly.
-  - New optional dep: `pip install fastmcp` (or, from a checkout, `pip install -e ".[mcp]"`)
+  - New optional dep: `pip install safestclaw[mcp]`
   - New plugin at `plugins/official/fastmcp_server.py`
   - New CLI: `safestclaw mcp [--transport stdio|sse|streamable-http]`
   - Setup wizard now offers an MCP step
