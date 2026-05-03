@@ -786,7 +786,8 @@ def setup_telegram(token: str, config_path: Path) -> str:
         return (
             "**Telegram bot configured!**\n\n"
             "Install the Telegram library if you haven't:\n"
-            "  pip install safestclaw[telegram]\n\n"
+            "  pip install python-telegram-bot\n"
+            "  (or, from a checkout: pip install -e \".[telegram]\")\n\n"
             "Then restart SafestClaw — your bot will start polling.\n\n"
             "**Restrict access to your user ID** (recommended):\n"
             "  Send this from your Telegram chat with the bot:\n"

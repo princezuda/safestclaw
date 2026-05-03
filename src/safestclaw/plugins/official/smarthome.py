@@ -2,7 +2,8 @@
 SafestClaw Smart Home Plugin - Control lights and devices.
 
 Supports:
-- Philips Hue (requires phue: pip install safestclaw[smarthome])
+- Philips Hue (requires phue: pip install phue paho-mqtt
+  — or, from a checkout: pip install -e ".[smarthome]")
 - MQTT (for Home Assistant, etc.)
 
 Config in ~/.safestclaw/config.yaml:
@@ -71,7 +72,10 @@ class SmartHomePlugin(BasePlugin):
             self.hue_bridge.connect()
             logger.info(f"Connected to Hue bridge at {bridge_ip}")
         except ImportError:
-            logger.warning("phue not installed. Run: pip install safestclaw[smarthome]")
+            logger.warning(
+                "phue not installed. Run: pip install phue "
+                "(or, from a checkout: pip install -e \".[smarthome]\")"
+            )
         except Exception as e:
             logger.error(f"Failed to connect to Hue bridge: {e}")
 
@@ -84,7 +88,10 @@ class SmartHomePlugin(BasePlugin):
             self.mqtt_client.loop_start()
             logger.info(f"Connected to MQTT broker at {broker}:{port}")
         except ImportError:
-            logger.warning("paho-mqtt not installed. Run: pip install safestclaw[smarthome]")
+            logger.warning(
+                "paho-mqtt not installed. Run: pip install paho-mqtt "
+                "(or, from a checkout: pip install -e \".[smarthome]\")"
+            )
         except Exception as e:
             logger.error(f"Failed to connect to MQTT broker: {e}")
 

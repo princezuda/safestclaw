@@ -28,7 +28,8 @@ class TelegramChannel(BaseChannel):
     """
     Telegram bot channel.
 
-    Requires: pip install safestclaw[telegram]
+    Requires: pip install python-telegram-bot
+    (or, from a checkout: pip install -e ".[telegram]")
 
     Features:
     - Direct messages
@@ -48,7 +49,8 @@ class TelegramChannel(BaseChannel):
         if not HAS_TELEGRAM:
             raise ImportError(
                 "Telegram support not installed. "
-                "Run: pip install safestclaw[telegram]"
+                "Run: pip install python-telegram-bot "
+                "(or, from a checkout: pip install -e \".[telegram]\")"
             )
 
         super().__init__(engine)
