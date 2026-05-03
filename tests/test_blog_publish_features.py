@@ -371,9 +371,12 @@ def test_inline_target_subfolder_parsed_from_command(tmp_path: Path):
     a = _make_action(tmp_path)
     a.publisher = BlogPublisher()
 
+    # Real config path under tmp_path so _save_publish_target_to_config
+    # doesn't try to mkdir on a mocked path (which would leak a real
+    # directory into the repo root).
+    config_file = tmp_path / "config" / "config.yaml"
     eng = MagicMock()
-    eng.config_path = MagicMock()
-    eng.config_path.exists = MagicMock(return_value=False)
+    eng.config_path = config_file
     eng.config = {"publish_targets": []}
 
     raw = "setup blog publish sftp://example.com user pass /var/www/html subfolder=blog/posts"

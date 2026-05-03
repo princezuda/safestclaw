@@ -26,3 +26,11 @@ env/
 # Environment files
 .env
 .env.local
+
+# Test pollution: a MagicMock leaking into a real path on disk creates
+# directories named after the mock. Match the literal class name and
+# the typical path-attribute fallouts so future test slips can't end up
+# in the working tree.
+MagicMock/
+**/mock.config_path/
+.safestclaw/   # local data dir if someone runs from repo root
