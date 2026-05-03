@@ -23,6 +23,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from safestclaw.actions.base import BaseAction
+from safestclaw.core.connectivity import (
+    NETWORK_EXCEPTIONS,
+    get_checker,
+    offline_banner,
+)
 from safestclaw.core.crawler import Crawler
 from safestclaw.core.feeds import FeedReader
 from safestclaw.core.parser import is_conversational, strip_conversational
@@ -328,18 +333,32 @@ class ResearchAction(BaseAction):
         session = ResearchSession(topic=topic)
         self._sessions[user_id] = session
 
+        # Bail out early if we know we're offline — no point trying three
+        # remote APIs when none will resolve.
+        if not await get_checker().is_online():
+            return await self._offline_message(
+                "arXiv, Semantic Scholar, and Wolfram Alpha", topic,
+            )
+
         ai_note = f" + LLM ({self.ai_writer.get_active_provider().provider}/{self.ai_writer.get_active_provider().model})" if (self.ai_writer and self.ai_writer.get_active_provider()) else " (no LLM — run `research analyze` after for AI summary)"
         lines = [f"**Researching: {topic}**", "", f"Searching academic sources{ai_note}...", ""]
 
         # Get Wolfram Alpha app_id from config if available
         wolfram_app_id = engine.config.get("apis", {}).get("wolfram_alpha", "")
 
-        # Search all academic sources concurrently
-        results = await search_all(
-            query=topic,
-            max_results=8,
-            wolfram_app_id=wolfram_app_id,
-        )
+        # Search all academic sources concurrently. If the bundle as a
+        # whole fails (DNS down between probe + call), fall back.
+        try:
+            results = await search_all(
+                query=topic,
+                max_results=8,
+                wolfram_app_id=wolfram_app_id,
+            )
+        except NETWORK_EXCEPTIONS as e:
+            logger.warning(f"search_all failed: {e}")
+            return await self._offline_message(
+                "arXiv, Semantic Scholar, and Wolfram Alpha", topic,
+            )
 
         # Process arXiv results
         for paper in results["arxiv"]:
@@ -484,9 +503,51 @@ class ResearchAction(BaseAction):
 
         return "\n".join(lines)
 
+    async def _offline_message(self, source: str, query: str) -> str:
+        """Standard offline reply for an academic source we can't reach."""
+        local = self._local_results_for(query)
+        body = (
+            f"Can't reach **{source}** right now — either the network is "
+            f"down or you're in offline mode (say `i'm online` to retry).\n"
+        )
+        if local:
+            body += "\n" + offline_banner("falling back to cached sources") + local
+        else:
+            body += (
+                "\nNo cached results for this topic. "
+                "Try again when you're back online, or use `summarize "
+                "<file.pdf>` / `analyze <text>` for offline ML-only "
+                "options."
+            )
+        return body
+
+    def _local_results_for(self, query: str) -> str:
+        """Best-effort local results: previous research session sources
+        whose title or summary mentions the query."""
+        hits: list[str] = []
+        q = query.lower().strip()
+        for session in self._sessions.values():
+            for src in session.sources:
+                blob = (src.title + " " + (src.summary or "")).lower()
+                if q in blob:
+                    hits.append(f"  • {src.title}  [{src.source_type}]")
+                    if len(hits) >= 5:
+                        break
+            if len(hits) >= 5:
+                break
+        if hits:
+            return "**From your previous research sessions:**\n" + "\n".join(hits)
+        return ""
+
     async def _search_arxiv(self, query: str, user_id: str) -> str:
         """Search arXiv specifically."""
-        papers = await search_arxiv(query, max_results=10)
+        if not await get_checker().is_online():
+            return await self._offline_message("arXiv", query)
+        try:
+            papers = await search_arxiv(query, max_results=10)
+        except NETWORK_EXCEPTIONS as e:
+            logger.warning(f"arXiv search failed: {e}")
+            return await self._offline_message("arXiv", query)
 
         if not papers:
             return f"No arXiv papers found for '{query}'."
@@ -531,7 +592,13 @@ class ResearchAction(BaseAction):
 
     async def _search_scholar(self, query: str, user_id: str) -> str:
         """Search Semantic Scholar specifically."""
-        papers = await search_semantic_scholar(query, max_results=8)
+        if not await get_checker().is_online():
+            return await self._offline_message("Semantic Scholar", query)
+        try:
+            papers = await search_semantic_scholar(query, max_results=8)
+        except NETWORK_EXCEPTIONS as e:
+            logger.warning(f"Semantic Scholar search failed: {e}")
+            return await self._offline_message("Semantic Scholar", query)
 
         if not papers:
             return f"No Semantic Scholar papers found for '{query}'."
@@ -581,9 +648,15 @@ class ResearchAction(BaseAction):
         self, query: str, user_id: str, engine: "SafestClaw"
     ) -> str:
         """Query Wolfram Alpha specifically."""
+        if not await get_checker().is_online():
+            return await self._offline_message("Wolfram Alpha", query)
         wolfram_app_id = engine.config.get("apis", {}).get("wolfram_alpha", "")
 
-        result = await query_wolfram_alpha(query, wolfram_app_id)
+        try:
+            result = await query_wolfram_alpha(query, wolfram_app_id)
+        except NETWORK_EXCEPTIONS as e:
+            logger.warning(f"Wolfram Alpha query failed: {e}")
+            return await self._offline_message("Wolfram Alpha", query)
 
         if not result:
             return (

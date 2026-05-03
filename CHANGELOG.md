@@ -9,6 +9,24 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 ## [Unreleased]
 
 ### Added
+- **Network resilience + offline mode.** Every action that touches the
+  internet now degrades gracefully when the network is down.
+  - Process-wide `ConnectivityChecker` with cached HEAD probes against
+    `1.1.1.1` and Google's `/generate_204`. Probes are coalesced under
+    an asyncio lock and cached for 30 seconds so we don't beat the
+    network up.
+  - **User-pinned offline mode**: say `i'm offline` (also `go offline`,
+    `offline mode`, `i'm on a plane`, `no internet`) and SafestClaw
+    skips probes entirely, returns local/cached results, and tells you.
+    Say `i'm online` / `go online` to switch back; SafestClaw verifies
+    by re-probing.
+  - `with_network_fallback` helper: actions express
+    *"try the online thing; on any network-shaped failure, run the
+    offline fallback and tag the response."*
+  - Research action wired up first: arXiv / Semantic Scholar / Wolfram
+    Alpha all detect offline mode (or catch live network errors), serve
+    a friendly explanation, and surface matches from your previous
+    research sessions when they exist.
 - **Proactive "find your blog template?" prompt.** When you register a
   new SFTP publish target — or when you start a publish to a target
   that has no template configured — SafestClaw now asks once whether

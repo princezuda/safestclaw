@@ -199,6 +199,12 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **Subfolder per site** — `sftp_subfolder: "blog"` (or set inline with `subfolder=blog/posts` on the setup command) so each post uploads to `{remote_path}/{subfolder}/<slug>.html`
 * **Repeat last publish** — `publish blog again` or `publish blog to here` reuses the last successful target, no retyping
 
+### 📶 Offline-Aware
+* **Network probe with caching** — actions check connectivity before reaching out, falling back gracefully when offline
+* **`i'm offline` / `i'm online`** — pin offline mode any time (plane, metered link, etc.); SafestClaw stops probing and returns local/cached results until you switch back
+* **Friendly fallback messages** — when an academic search can't reach arXiv/Scholar/Wolfram, you get a clear explanation plus any matches from your previous research sessions
+* **No silent failures** — every offline reply tells you it's offline and how to try again
+
 ### 💬 Conversational Input
 * **Talk naturally** — "hey claw, lets publish this blog" works the same as `publish blog`
 * **Friendly acknowledgments** — every intent gets a short, intent-aware intro when you phrase things conversationally ("Got it — wiring up the auto-blog…", "Sure — checking your calendar…")

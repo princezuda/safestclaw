@@ -12,6 +12,7 @@ from typing import Any
 
 import yaml
 
+from safestclaw.core.connectivity import get_checker, parse_offline_intent
 from safestclaw.core.memory import Memory
 from safestclaw.core.parser import CommandParser, friendly_intro, is_conversational
 from safestclaw.core.scheduler import Scheduler
@@ -168,6 +169,32 @@ class SafestClaw:
         Supports command chaining with pipes (|) and sequences (;, "and then").
         """
         metadata = metadata or {}
+
+        # User-pinned offline mode: "i'm offline" / "go online" toggle the
+        # process-wide ConnectivityChecker. Acknowledge in the same turn so
+        # the user gets immediate feedback.
+        intent = parse_offline_intent(text)
+        if intent is not None:
+            checker = get_checker()
+            if intent == "offline":
+                checker.set_offline_pinned(True)
+                return (
+                    "Got it — offline mode on. I'll skip network probes and "
+                    "use local data and ML fallbacks. Say `i'm online` when "
+                    "you're connected again."
+                )
+            checker.set_offline_pinned(False)
+            online = await checker.is_online(force=True)
+            if online:
+                return (
+                    "Welcome back online — I'll use the network when "
+                    "actions need it."
+                )
+            return (
+                "Tried to switch to online mode but I still can't reach the "
+                "internet. Staying in best-effort mode; I'll fall back to "
+                "local data on each call."
+            )
 
         # Check for command chains
         if self.parser.is_chain(text):
