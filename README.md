@@ -38,19 +38,22 @@ SafestClaw uses VADER, spaCy, sumy, YOLO, Whisper, Piper, and other battle-teste
 | Bluetooth control | ✅ | ❌ |
 | Network scanning | ✅ | ❌ |
 | Social media summaries | ✅ (Twitter, Mastodon, Bluesky) | ❌ (requires separate skills) |
-| Multi-channel | ✅ (CLI, Telegram, Webhooks) | ✅ (13+ platforms) |
 | Web crawling | ✅ | ✅ |
 | Summarization | ✅ (extractive) | ✅ (AI-generated) |
 | RSS/News feeds | ✅ (50+ feeds) | ✅ (via skills) |
 | Sentiment analysis | ✅ (VADER) | ✅ (AI) |
 | Email integration | ✅ | ✅ |
-| Calendar support | ✅ | ✅ |
+| Calendar support | ✅ (.ics + CalDAV) | ✅ |
 | Document reading | ✅ | ✅ |
 | Desktop notifications | ✅ | ✅ |
 | Object detection | ✅ (YOLO) | ❌ |
 | OCR | ✅ (Tesseract) | ❌ |
 | Cron jobs | ✅ | ✅ |
 | Webhooks | ✅ | ✅ |
+| Localhost web UI | ✅ (loopback-only, no CDNs) | ✅ |
+| Model Context Protocol (MCP) server | ✅ (FastMCP, every action as a tool) | ✅ |
+| Security scanners (no AI) | ✅ (bandit, pip-audit, semgrep, trivy, gitleaks, …) | ❌ |
+| Multi-channel | ✅ (CLI, Web, Telegram, Webhooks) | ✅ (13+ platforms) |
 | Plugin system | ✅ | ✅ (5,700+ skills) |
 | Free-form chat | ❌ | ✅ | 
 | Blog with and without  LLM  | ✅ no llm (extractive titles) with LLM, AI blogging | ❌ (always requires AI) |   
@@ -381,6 +384,9 @@ safestclaw --verbose
 > check my email                    # View inbox (requires setup)
 > read my email and remind me at 3pm # Chain commands naturally
 > calendar today                    # Today's events from .ics
+> calendar upcoming 14              # Next 14 days
+> calendar import ~/cal.ics         # Import an .ics file
+> calendar sync                     # Pull from a configured CalDAV server
 > analyze sentiment of this text    # VADER sentiment analysis
 > read document.pdf                 # Extract text from documents
 > write blog news We shipped a new feature today.  # Blog entry (no AI)
@@ -407,6 +413,12 @@ safestclaw --verbose
 > code stats src/                   # Lines of code by language
 > code regex \d{3}-\d{4} test 555-1234  # Test regex
 > auto blog list                    # View scheduled auto-blogs
+> security tools                    # Show installed security scanners
+> security scan ~/projects/myapp    # Run every available scanner
+> security bandit ~/projects/myapp  # Python static analysis
+> security pip-audit                # CVEs in installed Python deps
+> mcp status                        # Check FastMCP server state
+> mcp tools                         # List actions exposed over MCP
 > show me the flow                  # Architecture diagram
 > help
 ```
@@ -439,8 +451,12 @@ safestclaw document notes.md --output extracted.txt
 
 # Calendar
 safestclaw calendar import --file calendar.ics
-safestclaw calendar today
-safestclaw calendar upcoming --days 14
+safestclaw calendar today --file calendar.ics
+safestclaw calendar upcoming --file calendar.ics --days 14
+safestclaw calendar week --file calendar.ics
+# CalDAV sync (configure under actions.calendar.caldav, then run from chat):
+#   calendar sync         # pull events from a configured CalDAV server
+#   calendar calendars    # list calendars on the server
 
 # Blog — Deterministic (no AI)
 safestclaw blog help                 # Blog feature guide
@@ -502,6 +518,30 @@ safestclaw flow                      # Architecture diagram
 # Webhooks
 safestclaw webhook --port 8765
 
+# Localhost web UI (loopback-only, drives the entire engine)
+safestclaw web                       # http://127.0.0.1:8771/
+safestclaw web --port 9000           # custom port
+safestclaw web --token "secret"      # require Bearer/X-SafestClaw-Token
+safestclaw run --web                 # run alongside CLI / webhook / Telegram
+
+# Model Context Protocol (FastMCP — every action as an MCP tool)
+safestclaw mcp                       # stdio (Claude Desktop, IDE clients)
+safestclaw mcp --transport sse --port 8770
+safestclaw mcp --transport streamable-http --port 8770
+
+# Security scanners (no AI; auto-detects what's installed)
+safestclaw security tools            # show installed scanners + install hints
+safestclaw security scan ~/projects/myapp        # run every available scanner
+safestclaw security bandit ~/projects/myapp      # Python static analysis
+safestclaw security pip-audit                    # CVEs in installed Python deps
+safestclaw security semgrep ~/projects/myapp     # multi-language SAST
+safestclaw security trivy ~/projects/myapp       # filesystem vuln scan
+safestclaw security secrets ~/projects/myapp     # detect-secrets
+safestclaw security gitleaks ~/projects/myapp    # gitleaks
+
+# Setup wizard (prompts for AI mode, web UI, MCP)
+safestclaw setup
+
 # Initialize config
 safestclaw init
 ```
@@ -524,6 +564,11 @@ channels:
   webhook:
     enabled: true
     port: 8765
+  web:                       # localhost-only chat UI + JSON API
+    enabled: false
+    host: "127.0.0.1"        # loopback-only, enforced at construction
+    port: 8771
+    auth_token: ""           # optional Bearer token
   telegram:
     enabled: false
     token: "YOUR_BOT_TOKEN"
@@ -537,6 +582,24 @@ actions:
     enabled: true
     allowed_paths:
       - "~"
+  calendar:                  # optional CalDAV sync
+    caldav:
+      url: "https://nextcloud.example.com/remote.php/dav"
+      username: "you"
+      password: "app-password"
+      calendar: "personal"   # optional — omit to merge all calendars
+
+plugins:
+  fastmcp:                   # expose every action as an MCP tool
+    enabled: false
+    transport: "stdio"       # stdio | sse | streamable-http
+    host: "127.0.0.1"
+    port: 8770
+  security:                  # deterministic security scanners
+    allowed_paths:
+      - "~"
+      - "/tmp"
+    timeout: 120
 ```
 
 ---
