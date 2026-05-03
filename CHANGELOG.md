@@ -9,6 +9,19 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 ## [Unreleased]
 
 ### Added
+- **Conversational input handling.** SafestClaw now recognises
+  sentence-style requests, not just terse commands.
+  - Parser strips "hey claw, please", "id like to", "lets try", "can you",
+    plus mid-sentence handoffs like "research, lets try arxiv ..." so
+    "hey man, id like to research, lets try arxiv quantum computing"
+    routes the same as `research arxiv quantum computing`.
+  - Engine prepends a per-intent friendly intro to every action's
+    response when the input was conversational ("Got it — working on the
+    blog…", "Sure — checking your calendar…", "Got it — wiring up the
+    auto-blog…", etc.). Strict-form commands still get the dense output.
+  - Research action keeps a richer source-aware intro for arXiv /
+    Semantic Scholar / Wolfram Alpha; the engine avoids double-wrapping
+    via a prefix check.
 - **Auto-blog: optional LLM enrichment.** Source gathering and extractive
   summarisation still run deterministically; setting `llm_enabled: true`
   on an `auto_blogs` entry post-processes the deterministic draft through

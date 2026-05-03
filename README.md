@@ -189,6 +189,12 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **Status check** — `setup ai status` shows what's configured
 * **Zero config files** — No YAML editing needed, the command does it for you
 
+### 💬 Conversational Input
+* **Talk naturally** — "hey claw, lets publish this blog" works the same as `publish blog`
+* **Friendly acknowledgments** — every intent gets a short, intent-aware intro when you phrase things conversationally ("Got it — wiring up the auto-blog…", "Sure — checking your calendar…")
+* **Strict form still terse** — `research arxiv quantum` (canonical) returns the dense output without preamble
+* **Mid-sentence handoffs handled** — "hey man, id like to research, lets try arxiv quantum computing" routes correctly to arXiv
+
 ### 🧠 Smart Input Learning
 * **Word-to-number** — Type "research select one two three" and SafestClaw understands "1 2 3"
 * **Typo auto-correction** — "remaind me" → "remind me", "summerize" → "summarize"

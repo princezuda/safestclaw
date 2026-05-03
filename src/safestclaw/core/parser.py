@@ -80,6 +80,152 @@ COMMON_CORRECTIONS = {
 }
 
 
+# Conversational fillers we strip before intent matching. Listed roughly
+# longest-to-shortest so longer phrases match before their prefixes (e.g.
+# "would you mind" before "would you").
+CONVERSATIONAL_PREFIXES = [
+    r"^\s*hey\s+(?:there|man|dude|buddy|friend|claw)\s*[,!.]?\s+",
+    r"^\s*hi\s+(?:there|man|dude|buddy|friend|claw)\s*[,!.]?\s+",
+    r"^\s*(?:hey|hi|yo|sup)\s*[,!.]\s+",
+    r"^\s*(?:please|pls|plz)\s+",
+    r"^\s*(?:would\s+you\s+mind|would\s+you|could\s+you|can\s+you|will\s+you)\s+",
+    r"^\s*(?:i'?d\s+(?:like|love)\s+to|i\s+would\s+like\s+to)\s+",
+    r"^\s*(?:i\s+want\s+to|i\s+wanna|i'?m\s+going\s+to|imma)\s+",
+    r"^\s*(?:i\s+need\s+to|gotta|gonna)\s+",
+    r"^\s*(?:let\s+me|let'?s|lemme)\s+",
+    r"^\s*(?:try\s+to|try|go\s+ahead\s+and|just|maybe|how\s+about)\s+",
+]
+
+# Filler words that often appear mid-sentence and add no information.
+# Stripped after the leading conversational prefixes are removed.
+INLINE_FILLERS = [
+    r"\b(?:um|uh|like|you\s+know|i\s+mean|kind\s+of|sort\s+of)\b\s*",
+    r"\b(?:please|pls)\b\s*",
+]
+
+# Mid-sentence "hand-off" phrases that follow a comma/semicolon and
+# introduce the real command. Without these we'd leave junk like
+# "research, let's try arxiv …" — the leading-anchor strip can't reach
+# past the first comma, but this collapses the comma + handoff into a
+# single space so what's left is the canonical command.
+INLINE_HANDOFFS = [
+    r"[,;]\s*(?:let'?s\s+(?:try|do|go\s+with)|let\s+me|lemme|"
+    r"can\s+you|could\s+you|would\s+you|please|i'?d\s+like\s+to|"
+    r"i\s+would\s+like\s+to|i\s+want\s+to|i\s+need\s+to|"
+    r"how\s+about|maybe|try)\s+",
+]
+
+
+# Markers that signal sentence-style ("hey, could you...") rather than
+# command-style ("crawl https://...") input.
+_CONVERSATIONAL_MARKERS: tuple[str, ...] = (
+    "hey", "hi ", "yo ", "sup ",
+    "id like", "i'd like", "i would like",
+    "let me", "let's", "lets ", "lemme",
+    "can you", "could you", "would you", "would you mind",
+    "please", "pls", "plz",
+    "i wanna", "i want", "i need", "gonna", "gotta",
+    "thanks", "thank you", "ty ",
+)
+
+
+def is_conversational(text: str) -> bool:
+    """Heuristic: did the user type a sentence rather than a terse command?"""
+    if not text:
+        return False
+    lowered = text.lower()
+    if any(m in lowered for m in _CONVERSATIONAL_MARKERS):
+        return True
+    # Long inputs without an obvious imperative also lean friendly.
+    return len(text.split()) >= 8
+
+
+# Per-intent friendly opener used when input is conversational. Anything
+# missing falls back to the generic "On it — running <intent>…".
+_INTENT_INTROS: dict[str, str] = {
+    "blog":       "Got it — working on the blog…",
+    "autoblog":   "Got it — wiring up the auto-blog…",
+    "briefing":   "On it — putting your briefing together…",
+    "calendar":   "Sure — checking your calendar…",
+    "code":       "On it — running that through the coding toolbox…",
+    "crawl":      "On it — crawling that for you…",
+    "document":   "On it — reading that document…",
+    "email":      "Sure — checking your email…",
+    "files":      "On it — looking at those files…",
+    "flow":       "Here's how SafestClaw is wired up:",
+    "help":       "",
+    "llm_setup":  "On it — setting that up…",
+    "mcp":        "On it — handling the MCP request…",
+    "news":       "On it — pulling the latest news…",
+    "notify":     "Sure — sending that notification…",
+    "ocr":        "On it — running OCR…",
+    "publish":    "On it — publishing that for you…",
+    "reminder":   "Got it — I'll remember that.",
+    "research":   "On it — kicking off your research…",
+    "security":   "On it — running the security scan…",
+    "shell":      "On it — running that command…",
+    "smarthome":  "On it — adjusting your smart home…",
+    "style":      "On it — looking at your writing style…",
+    "summarize":  "On it — summarising…",
+    "vision":     "On it — taking a look at that image…",
+    "weather":    "Sure — checking the weather…",
+    "webhook":    "On it — handling the webhook…",
+}
+
+
+def friendly_intro(intent: str | None) -> str:
+    """Return a friendly one-liner for `intent`, or the generic fallback."""
+    if not intent:
+        return "On it…"
+    return _INTENT_INTROS.get(intent, f"On it — running {intent}…")
+
+
+def strip_conversational(text: str) -> str:
+    """
+    Strip conversational fillers from the start of a command and again
+    after any "let's <verb>" / "let me <verb>" hand-off so chained
+    politeness like "hey man, id like to research, let's try arxiv …"
+    collapses to "research arxiv …".
+
+    Idempotent: running this twice on the same text returns the same string.
+    """
+    if not text:
+        return text
+
+    out = text
+    # Apply leading prefixes repeatedly so chained politeness gets unwound:
+    #   "hey man, i'd like to let's try arxiv …"
+    #   → "i'd like to let's try arxiv …"
+    #   → "let's try arxiv …"
+    #   → "try arxiv …"
+    #   → "arxiv …"
+    for _ in range(4):
+        before = out
+        for pat in CONVERSATIONAL_PREFIXES:
+            out = re.sub(pat, "", out, flags=re.IGNORECASE)
+        if out == before:
+            break
+
+    # Collapse mid-sentence handoffs: "research, let's try arxiv ..."
+    # → "research arxiv ..." . Run a few times so chained handoffs
+    # ("research, lets try, can you arxiv X") all collapse.
+    for _ in range(3):
+        before = out
+        for pat in INLINE_HANDOFFS:
+            out = re.sub(pat, " ", out, flags=re.IGNORECASE)
+        if out == before:
+            break
+
+    # Squash inline fillers, then any double spaces.
+    for pat in INLINE_FILLERS:
+        out = re.sub(pat, " ", out, flags=re.IGNORECASE)
+    out = re.sub(r"\s{2,}", " ", out).strip(" ,.;:")
+
+    # Empty after stripping? Return the original — better to fall through
+    # to "I didn't understand that" than to act on nothing.
+    return out or text
+
+
 def normalize_text(text: str) -> str:
     """
     Smart text normalization — fix common mistakes before parsing.
@@ -98,6 +244,10 @@ def normalize_text(text: str) -> str:
     """
     if not text:
         return text
+
+    # Strip conversational fillers first so the rest of normalisation
+    # operates on the actual command, not on "hey man, id like to ...".
+    text = strip_conversational(text)
 
     words = text.split()
     corrected = []
