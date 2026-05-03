@@ -9,6 +9,19 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 ## [Unreleased]
 
 ### Added
+- **First-run setup walkthrough in every channel.** Any user whose
+  config doesn't have `safestclaw.setup_completed: true` is walked
+  through setup conversationally on their next message — works in CLI,
+  web UI, Telegram, and any future chat channel that dispatches through
+  `engine.handle_message`.
+  - New `core/chat_setup.py` carries the same decisions as the rich
+    wizard (local-only / cloud / hybrid / skip), but as plain-text Q&A
+    so it works anywhere.
+  - Web UI shows a yellow "Setup not complete" banner driven by a new
+    `needs_setup` field on `/api/health`.
+  - CLI prints a yellow setup-needed panel after the regular banner.
+  - Replying `skip` at the welcome step marks setup complete so we stop
+    asking; the user can run the rich `safestclaw setup` any time.
 - **Network resilience + offline mode.** Every action that touches the
   internet now degrades gracefully when the network is down.
   - Process-wide `ConnectivityChecker` with cached HEAD probes against

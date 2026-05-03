@@ -199,6 +199,13 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **Subfolder per site** — `sftp_subfolder: "blog"` (or set inline with `subfolder=blog/posts` on the setup command) so each post uploads to `{remote_path}/{subfolder}/<slug>.html`
 * **Repeat last publish** — `publish blog again` or `publish blog to here` reuses the last successful target, no retyping
 
+### 🛠️ First-Run Setup, Anywhere
+* **Same walkthrough in every channel** — CLI, web UI, Telegram all guide first-time users through local-only / cloud / hybrid / skip
+* **Conversational** — type a number or `skip`; no rich prompts that only work in a TTY
+* **Web UI banner** — driven by `/api/health.needs_setup`
+* **CLI nudge** — yellow setup-needed panel right after launch when config isn't complete
+* **Triggers any time `setup_completed` isn't set** — not just first launch; perfect for users who never finished setup
+
 ### 📶 Offline-Aware
 * **Network probe with caching** — actions check connectivity before reaching out, falling back gracefully when offline
 * **`i'm offline` / `i'm online`** — pin offline mode any time (plane, metered link, etc.); SafestClaw stops probing and returns local/cached results until you switch back

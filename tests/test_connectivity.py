@@ -205,6 +205,9 @@ def test_engine_handles_offline_intent_and_pins():
     eng = SafestClaw.__new__(SafestClaw)
     eng.parser = MagicMock()
     eng.memory = MagicMock()
+    # Mock chat_setup so it never claims setup is needed (tested elsewhere).
+    eng.chat_setup = MagicMock()
+    eng.chat_setup.needs_setup = MagicMock(return_value=False)
 
     out = run(eng.handle_message(
         text="i'm offline",
@@ -220,6 +223,9 @@ def test_engine_handles_online_intent_when_reachable():
     eng = SafestClaw.__new__(SafestClaw)
     eng.parser = MagicMock()
     eng.memory = MagicMock()
+    # Mock chat_setup so it never claims setup is needed (tested elsewhere).
+    eng.chat_setup = MagicMock()
+    eng.chat_setup.needs_setup = MagicMock(return_value=False)
 
     # Pre-pin so we can verify unpin
     connectivity.get_checker().set_offline_pinned(True)
@@ -240,6 +246,9 @@ def test_engine_handles_online_intent_when_still_unreachable():
     eng = SafestClaw.__new__(SafestClaw)
     eng.parser = MagicMock()
     eng.memory = MagicMock()
+    # Mock chat_setup so it never claims setup is needed (tested elsewhere).
+    eng.chat_setup = MagicMock()
+    eng.chat_setup.needs_setup = MagicMock(return_value=False)
     connectivity.get_checker().set_offline_pinned(True)
 
     with patch.object(

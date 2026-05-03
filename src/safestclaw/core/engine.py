@@ -12,6 +12,7 @@ from typing import Any
 
 import yaml
 
+from safestclaw.core.chat_setup import ChatSetup
 from safestclaw.core.connectivity import get_checker, parse_offline_intent
 from safestclaw.core.memory import Memory
 from safestclaw.core.parser import CommandParser, friendly_intro, is_conversational
@@ -58,6 +59,11 @@ class SafestClaw:
 
         # Optional NLU bridge (loaded after config)
         self.nlu: Any = None
+
+        # Channel-agnostic first-time-setup walkthrough. Triggered for
+        # any user whose config doesn't have `safestclaw.setup_completed`
+        # set, regardless of whether this is the user's first session.
+        self.chat_setup = ChatSetup(self.config_path)
 
         # Blog scheduler (initialized after config load)
         self.blog_scheduler: Any = None
@@ -169,6 +175,15 @@ class SafestClaw:
         Supports command chaining with pipes (|) and sequences (;, "and then").
         """
         metadata = metadata or {}
+
+        # First-time setup walkthrough — runs in any channel that goes
+        # through handle_message (CLI, web UI, Telegram, …) for any user
+        # whose config doesn't have `safestclaw.setup_completed: true`.
+        # The user can type "skip" to defer.
+        if self.chat_setup.needs_setup():
+            reply = await self.chat_setup.handle(text, user_id)
+            if reply is not None:
+                return reply
 
         # User-pinned offline mode: "i'm offline" / "go online" toggle the
         # process-wide ConnectivityChecker. Acknowledge in the same turn so

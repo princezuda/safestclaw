@@ -66,6 +66,28 @@ class CLIChannel(BaseChannel):
                 border_style="green",
             )
         )
+
+        # Show a clear nudge if setup hasn't been completed. The chat
+        # walkthrough fires automatically on the next message either
+        # way, but the banner removes the "what do I type?" guesswork.
+        try:
+            if (
+                hasattr(self.engine, "chat_setup")
+                and self.engine.chat_setup.needs_setup()
+            ):
+                self.console.print(
+                    Panel.fit(
+                        "[bold yellow]Setup not complete yet.[/bold yellow]\n"
+                        "Type any message to start a quick walkthrough "
+                        "(LLM mode, providers, etc.),\n"
+                        "or type [bold]skip[/bold] to defer.",
+                        border_style="yellow",
+                        title="[bold yellow] First-run setup [/bold yellow]",
+                    )
+                )
+        except Exception:
+            pass
+
         self.console.print()
 
         while self.running:
