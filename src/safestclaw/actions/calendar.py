@@ -4,7 +4,7 @@ SafestClaw Calendar Action - ICS/CalDAV calendar support.
 Supports:
 - Reading .ics files
 - Parsing calendar events
-- CalDAV server sync (Google, iCloud, etc.)
+- CalDAV server sync (Google, iCloud, Nextcloud, Radicale, etc.)
 """
 
 import logging
@@ -214,14 +214,100 @@ class CalendarParser:
         return self.filter_by_date_range(events, now, end)
 
 
+class CalDAVClient:
+    """
+    Sync events from a CalDAV server.
+
+    Works with Nextcloud, Radicale, iCloud, Fastmail, Google Calendar
+    (via app password + caldav.icloud.com-style endpoint), etc.
+    """
+
+    def __init__(
+        self,
+        url: str,
+        username: str,
+        password: str,
+        calendar_name: str | None = None,
+    ):
+        if not HAS_CALDAV:
+            raise ImportError(
+                "caldav not installed. Run: pip install safestclaw[caldav]"
+            )
+        self.url = url
+        self.username = username
+        self.password = password
+        self.calendar_name = calendar_name
+
+    def _connect(self):
+        return caldav.DAVClient(
+            url=self.url,
+            username=self.username,
+            password=self.password,
+        )
+
+    def list_calendars(self) -> list[str]:
+        """Return the names of calendars available on the server."""
+        client = self._connect()
+        principal = client.principal()
+        return [c.name or str(c.url) for c in principal.calendars()]
+
+    def fetch_events(self, days: int = 30) -> list[CalendarEvent]:
+        """
+        Fetch events for the next N days from the configured CalDAV calendar.
+
+        If no `calendar_name` was given, all calendars on the principal
+        are merged into a single list.
+        """
+        parser = CalendarParser()
+        client = self._connect()
+        principal = client.principal()
+
+        calendars = principal.calendars()
+        if self.calendar_name:
+            calendars = [
+                c for c in calendars
+                if (c.name or "").lower() == self.calendar_name.lower()
+            ]
+            if not calendars:
+                logger.warning(
+                    f"CalDAV calendar '{self.calendar_name}' not found"
+                )
+                return []
+
+        start = datetime.now()
+        end = start + timedelta(days=days)
+
+        all_events: list[CalendarEvent] = []
+        for cal in calendars:
+            try:
+                results = cal.date_search(start=start, end=end, expand=True)
+            except Exception as e:
+                logger.warning(f"CalDAV search failed for {cal.name}: {e}")
+                continue
+            for item in results:
+                try:
+                    raw = item.data
+                    if isinstance(raw, str):
+                        raw = raw.encode("utf-8")
+                    all_events.extend(parser.parse_ics(raw))
+                except Exception as e:
+                    logger.warning(f"Failed to parse CalDAV event: {e}")
+
+        all_events.sort(key=lambda e: e.start)
+        return all_events
+
+
 class CalendarAction(BaseAction):
     """
     Calendar action for SafestClaw.
 
-    Commands:
-    - show calendar / today / schedule
-    - upcoming events
-    - import calendar file.ics
+    Subcommands:
+    - today / schedule  — events for today (default)
+    - upcoming [N]      — events for next N days (default 7)
+    - week              — alias for "upcoming 7"
+    - import <path>     — import events from an .ics file
+    - sync              — fetch from CalDAV (requires config)
+    - calendars         — list calendars available on the CalDAV server
     """
 
     name = "calendar"
@@ -250,6 +336,56 @@ class CalendarAction(BaseAction):
         except (OSError, ValueError):
             return False
 
+    @staticmethod
+    def _parse_subcommand(raw: str) -> tuple[str, str]:
+        """
+        Extract a subcommand and its argument from free-form text like
+        "calendar today", "show my schedule for tomorrow",
+        "calendar import ~/cal.ics", "calendar upcoming 14", "calendar sync".
+
+        Returns (subcommand, argument). Defaults to ("today", "").
+        """
+        if not raw:
+            return "today", ""
+
+        text = raw.strip().lower()
+        for keyword in ("calendar", "schedule", "agenda"):
+            if text.startswith(keyword + " "):
+                text = text[len(keyword) + 1:].strip()
+                break
+            if text == keyword:
+                text = ""
+                break
+
+        # Remove common filler so "show my upcoming events" still routes.
+        for filler in ("show me ", "show ", "what's on ", "whats on ",
+                       "what is on ", "my "):
+            if text.startswith(filler):
+                text = text[len(filler):].strip()
+
+        if not text:
+            return "today", ""
+
+        first, _, rest = text.partition(" ")
+        rest = rest.strip()
+
+        if first in ("today", "schedule"):
+            return "today", rest
+        if first == "tomorrow":
+            return "upcoming", "1"
+        if first in ("upcoming", "next"):
+            return "upcoming", rest
+        if first == "week":
+            return "week", rest
+        if first == "import":
+            return "import", rest
+        if first in ("sync", "refresh", "pull"):
+            return "sync", rest
+        if first in ("calendars", "list"):
+            return "calendars", rest
+
+        return "today", text
+
     async def execute(
         self,
         params: dict[str, Any],
@@ -263,7 +399,14 @@ class CalendarAction(BaseAction):
 
         self._parser = CalendarParser()
 
-        subcommand = params.get("subcommand", "today")
+        # Prefer explicit params (e.g. from MCP/CLI), fall back to raw_input.
+        subcommand = params.get("subcommand")
+        argument = ""
+
+        if not subcommand:
+            subcommand, argument = self._parse_subcommand(
+                params.get("raw_input", "")
+            )
 
         # Load cached events
         cached = await engine.memory.get(f"calendar_{user_id}")
@@ -290,13 +433,24 @@ class CalendarAction(BaseAction):
         if subcommand == "today":
             return self._show_today()
         elif subcommand == "upcoming":
-            days = params.get("days", 7)
+            try:
+                days = int(params.get("days") or argument or 7)
+            except (TypeError, ValueError):
+                days = 7
             return self._show_upcoming(days)
         elif subcommand == "import":
-            path = params.get("path", "")
+            path = params.get("path") or argument
             return await self._import_file(path, user_id, engine)
         elif subcommand == "week":
             return self._show_upcoming(7)
+        elif subcommand == "sync":
+            try:
+                days = int(params.get("days") or argument or 30)
+            except (TypeError, ValueError):
+                days = 30
+            return await self._sync_caldav(user_id, engine, days)
+        elif subcommand == "calendars":
+            return self._list_caldav_calendars(engine)
         else:
             return self._show_today()
 
@@ -392,7 +546,100 @@ class CalendarAction(BaseAction):
 
         self._events = events
 
-        # Cache events
+        await self._cache_events(user_id, engine)
+
+        return f"✅ Imported {len(events)} events from {file_path.name}"
+
+    # ------------------------------------------------------------------
+    # CalDAV
+    # ------------------------------------------------------------------
+
+    def _build_caldav_client(self, engine: "SafestClaw") -> CalDAVClient | None:
+        """Build a CalDAVClient from engine config, or return None."""
+        cfg = ((engine.config.get("actions") or {}).get("calendar") or {}).get(
+            "caldav"
+        ) or {}
+        url = cfg.get("url")
+        username = cfg.get("username")
+        password = cfg.get("password")
+        calendar_name = cfg.get("calendar")
+
+        if not (url and username and password):
+            return None
+
+        return CalDAVClient(
+            url=url,
+            username=username,
+            password=password,
+            calendar_name=calendar_name,
+        )
+
+    async def _sync_caldav(
+        self,
+        user_id: str,
+        engine: "SafestClaw",
+        days: int,
+    ) -> str:
+        """Pull events from a configured CalDAV server."""
+        if not HAS_CALDAV:
+            return (
+                "CalDAV support not installed. "
+                "Run: pip install safestclaw[caldav]"
+            )
+
+        client = self._build_caldav_client(engine)
+        if client is None:
+            return (
+                "CalDAV not configured. Add to config.yaml:\n"
+                "actions:\n"
+                "  calendar:\n"
+                "    caldav:\n"
+                "      url: \"https://nextcloud.example.com/remote.php/dav\"\n"
+                "      username: \"you\"\n"
+                "      password: \"app-password\"\n"
+                "      calendar: \"personal\"  # optional"
+            )
+
+        try:
+            import asyncio
+            events = await asyncio.to_thread(client.fetch_events, days)
+        except Exception as e:
+            logger.error(f"CalDAV sync failed: {e}")
+            return f"CalDAV sync failed: {e}"
+
+        if not events:
+            return "📅 CalDAV sync completed — no events in that window."
+
+        self._events = events
+        await self._cache_events(user_id, engine)
+
+        return f"✅ Synced {len(events)} events from CalDAV (next {days} days)"
+
+    def _list_caldav_calendars(self, engine: "SafestClaw") -> str:
+        """List calendar names on the configured CalDAV server."""
+        if not HAS_CALDAV:
+            return (
+                "CalDAV support not installed. "
+                "Run: pip install safestclaw[caldav]"
+            )
+
+        client = self._build_caldav_client(engine)
+        if client is None:
+            return "CalDAV not configured. See `calendar sync` for the config shape."
+
+        try:
+            names = client.list_calendars()
+        except Exception as e:
+            logger.error(f"CalDAV list failed: {e}")
+            return f"CalDAV list failed: {e}"
+
+        if not names:
+            return "No calendars available on that CalDAV server."
+
+        return "📅 Available calendars:\n" + "\n".join(f"  • {n}" for n in names)
+
+    async def _cache_events(self, user_id: str, engine: "SafestClaw") -> None:
+        """Persist current events to engine memory."""
         cached_data = [
             {
                 'uid': e.uid,
@@ -406,9 +653,6 @@ class CalendarAction(BaseAction):
                 'organizer': e.organizer,
                 'attendees': e.attendees,
             }
-            for e in events
+            for e in self._events
         ]
-
         await engine.memory.set(f"calendar_{user_id}", cached_data)
-
-        return f"✅ Imported {len(events)} events from {file_path.name}"

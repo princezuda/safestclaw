@@ -362,6 +362,108 @@ def _summary(console: Console, config_path: Path) -> None:
     )
 
 
+def _save_fastmcp_config(
+    config_path: Path,
+    enabled: bool,
+    autostart: bool,
+    transport: str,
+    host: str,
+    port: int,
+) -> None:
+    """Persist plugins.fastmcp settings into config.yaml."""
+    config: dict[str, Any] = {}
+    if config_path.exists():
+        try:
+            with open(config_path) as f:
+                config = yaml.safe_load(f) or {}
+        except Exception:
+            config = {}
+    plugins = config.get("plugins") or {}
+    plugins["fastmcp"] = {
+        "enabled": enabled,
+        "autostart": autostart,
+        "transport": transport,
+        "host": host,
+        "port": port,
+        "server_name": "safestclaw",
+    }
+    config["plugins"] = plugins
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+
+def _prompt_fastmcp(console: Console, config_path: Path) -> None:
+    """Optionally enable the FastMCP plugin (actions over MCP)."""
+    console.print()
+    console.print(
+        Panel.fit(
+            "[bold]Model Context Protocol (FastMCP)[/bold]\n\n"
+            "Expose every SafestClaw action as an MCP tool so MCP-aware\n"
+            "clients (Claude Desktop, IDE extensions, agents) can call them.\n\n"
+            "Recommended transport:\n"
+            "  • [bold]stdio[/bold]            — for clients that spawn\n"
+            "    SafestClaw as a subprocess (Claude Desktop, etc.)\n"
+            "  • [bold]sse[/bold] / [bold]streamable-http[/bold] — for HTTP-based clients\n\n"
+            "Requires: pip install safestclaw[mcp]",
+            title="Optional: MCP integration",
+            border_style="cyan",
+        )
+    )
+    if not Confirm.ask(
+        "Enable the FastMCP plugin?", default=False, console=console
+    ):
+        _save_fastmcp_config(
+            config_path,
+            enabled=False,
+            autostart=False,
+            transport="stdio",
+            host="127.0.0.1",
+            port=8770,
+        )
+        console.print("[dim]MCP plugin left disabled.[/dim]")
+        return
+
+    transport = Prompt.ask(
+        "Transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default="stdio",
+        console=console,
+    )
+
+    autostart = False
+    host = "127.0.0.1"
+    port = 8770
+
+    if transport == "stdio":
+        console.print(
+            "[dim]With stdio, run [bold]safestclaw mcp[/bold] (or have your "
+            "MCP client spawn it). Autostart from the chat process is "
+            "disabled for stdio.[/dim]"
+        )
+    else:
+        autostart = Confirm.ask(
+            f"Autostart the {transport} server when SafestClaw boots?",
+            default=False,
+            console=console,
+        )
+        host = Prompt.ask("Bind host", default="127.0.0.1", console=console)
+        port = IntPrompt.ask("Port", default=8770, console=console)
+
+    _save_fastmcp_config(
+        config_path,
+        enabled=True,
+        autostart=autostart,
+        transport=transport,
+        host=host,
+        port=port,
+    )
+    console.print("[green]FastMCP plugin enabled.[/green]")
+    console.print(
+        "[dim]Install the optional dependency with: "
+        "[bold]pip install safestclaw[mcp][/bold][/dim]"
+    )
+
+
 async def run_wizard(
     config_path: Path,
     console: Console | None = None,
@@ -394,6 +496,9 @@ async def run_wizard(
             f"Edit [bold]{config_path}[/bold] manually, then run "
             "[bold]safestclaw setup[/bold] when you're ready."
         )
+
+    if mode != 4:
+        _prompt_fastmcp(console, config_path)
 
     _mark_completed(config_path)
     _summary(console, config_path)

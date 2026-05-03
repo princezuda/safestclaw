@@ -131,8 +131,9 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 
 ### 📅 Calendar Support
 * **ICS Files** — Import and parse .ics calendar files
-* **CalDAV** — Connect to Google Calendar, iCloud (optional)
+* **CalDAV** — Sync from Nextcloud, Radicale, iCloud, Fastmail, Google (`pip install safestclaw[caldav]`)
 * **Event filtering** — Today, upcoming, by date range
+* **Chat commands** — `calendar today`, `calendar upcoming 14`, `calendar import ~/cal.ics`, `calendar sync`, `calendar calendars`
 
 ### 📄 Document Reading
 * **PDF** — Text extraction with PyMuPDF
@@ -148,6 +149,13 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **NLP** — spaCy named entity recognition (~50MB)
 * **Vision** — YOLO object detection + OCR (~2GB)
 * **OCR** — Tesseract text extraction from images (lightweight)
+
+### 🔌 Model Context Protocol (FastMCP)
+* **Every action as an MCP tool** — `summarize`, `crawl`, `calendar`, `news`, `blog`, `research`, … all callable from MCP clients
+* **Transports** — `stdio` (Claude Desktop, IDE extensions), `sse`, `streamable-http`
+* **Run as a subprocess** — `safestclaw mcp` (the format MCP clients spawn)
+* **In-process HTTP** — enable `plugins.fastmcp.autostart` to expose a SSE/HTTP server when SafestClaw boots
+* **Opt-in** — `pip install safestclaw[mcp]`, then enable in the setup wizard or `config.yaml`
 
 ### 🔬 Real Research Sources
 * **arXiv** — Search academic papers across CS, math, physics, biology, and more (free, no API key)

@@ -50,11 +50,31 @@ actions:
       - "/tmp"
   browser:
     enabled: false
+  # Calendar — local .ics import works out of the box.
+  # Optional CalDAV sync (Nextcloud, Radicale, iCloud, Fastmail, …):
+  # calendar:
+  #   caldav:
+  #     url: "https://nextcloud.example.com/remote.php/dav"
+  #     username: "you"
+  #     password: "app-password"
+  #     calendar: "personal"   # optional — omit to merge all calendars
 
 # Memory
 memory:
   max_history: 1000
   retention_days: 365
+
+# Plugins (optional)
+# plugins:
+#   # FastMCP — expose every SafestClaw action as a Model Context Protocol tool.
+#   # Requires: pip install safestclaw[mcp]
+#   fastmcp:
+#     enabled: true
+#     autostart: false           # only used for sse / streamable-http
+#     transport: "stdio"         # stdio | sse | streamable-http
+#     host: "127.0.0.1"
+#     port: 8770
+#     server_name: "safestclaw"
 
 # Optional API keys (for enhanced features)
 apis:

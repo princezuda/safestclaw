@@ -6,6 +6,31 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 
 ---
 
+## [Unreleased]
+
+### Added
+- **FastMCP plugin** — every SafestClaw action is now optionally exposed as a
+  Model Context Protocol tool, so MCP-aware clients (Claude Desktop, IDE
+  extensions, agents) can call them directly.
+  - New optional dep: `pip install safestclaw[mcp]`
+  - New plugin at `plugins/official/fastmcp_server.py`
+  - New CLI: `safestclaw mcp [--transport stdio|sse|streamable-http]`
+  - Setup wizard now offers an MCP step
+  - Chat commands: `mcp status`, `mcp start <transport>`, `mcp stop`,
+    `mcp tools`
+- **CalDAV calendar sync** — finishes the previously stubbed CalDAV path.
+  - `calendar sync` pulls events from a configured CalDAV server
+    (Nextcloud, Radicale, iCloud, Fastmail, …)
+  - `calendar calendars` lists calendars on the server
+  - Config under `actions.calendar.caldav`
+- **Calendar subcommand routing** — `calendar today`, `calendar upcoming N`,
+  `calendar week`, `calendar import <path>` now work from the chat interface
+  (the parser used to drop the subcommand).
+- **Calendar CLI parity** — `safestclaw calendar today/upcoming/week --file
+  cal.ics` now actually renders events instead of printing help.
+
+---
+
 ## [0.3.2] - 2026-03-12 — 100-Star Milestone
 
 ### Added
