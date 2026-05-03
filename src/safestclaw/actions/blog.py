@@ -47,6 +47,10 @@ SESSION_AWAITING_CHOICE = "awaiting_choice"
 SESSION_AWAITING_TOPIC = "awaiting_topic"
 SESSION_REVIEWING = "reviewing"
 SESSION_PENDING_PUBLISH = "pending_publish"
+# Proactive template-offer flow: after a new SFTP target is registered
+# (or before a first publish to a target with no template) we ask
+# whether to find and reuse the existing site template.
+SESSION_AWAITING_TEMPLATE_OFFER = "awaiting_template_offer"
 
 
 class BlogAction(BaseAction):
@@ -336,6 +340,11 @@ class BlogAction(BaseAction):
 
         elif state == SESSION_PENDING_PUBLISH:
             return await self._handle_pending_publish(
+                session, raw_input, lower, user_id, engine,
+            )
+
+        elif state == SESSION_AWAITING_TEMPLATE_OFFER:
+            return await self._handle_template_offer(
                 session, raw_input, lower, user_id, engine,
             )
 
@@ -1027,26 +1036,52 @@ class BlogAction(BaseAction):
         self.publisher.add_target(target)
 
         location = target.url or target.sftp_host
+        header = (
+            "**Publish target saved!**\n\n"
+            if saved
+            else "**Target active this session** (could not write to config).\n\n"
+        )
+        details = (
+            f"  Label:    {target.label}\n"
+            f"  Type:     {target.target_type.value}\n"
+            f"  Location: {location}\n\n"
+        )
+
+        # Proactively offer to learn the existing site's HTML template
+        # for SFTP targets — way friendlier than expecting the user to
+        # discover `learn template from <target>` on their own.
+        if (
+            target.target_type == PublishTargetType.SFTP
+            and not target.html_template
+            and not target.html_template_path
+        ):
+            self._set_session(
+                user_id, SESSION_AWAITING_TEMPLATE_OFFER,
+                target_label=target.label,
+                from_setup=True,
+            )
+            return header + details + (
+                "Would you like me to find your blog's existing template and "
+                "use it for new posts? That way articles match your site "
+                "instead of using SafestClaw's generic style.\n\n"
+                "  **yes**       — fetch a sample post now and learn the template\n"
+                "  **auto**      — auto-detect on the first publish (cached after)\n"
+                "  **no**        — skip; I'll use the built-in default template\n"
+                "  **folders**   — show folders on the server first so I sample the right one\n"
+            )
+
+        # Non-SFTP / template already configured: keep the original message
         if saved:
-            return (
-                f"**Publish target saved!**\n\n"
-                f"  Label:    {target.label}\n"
-                f"  Type:     {target.target_type.value}\n"
-                f"  Location: {location}\n\n"
+            return header + details + (
                 f"Use it any time:\n"
                 f"  publish blog to {target.label}\n"
                 f"  publish blog to all\n\n"
                 f"Remove later with:  setup blog publish remove {target.label}\n"
                 f"List all targets:   setup blog publish list"
             )
-        else:
-            return (
-                f"**Target active this session** (could not write to config).\n\n"
-                f"  Label:    {target.label}\n"
-                f"  Type:     {target.target_type.value}\n"
-                f"  Location: {location}\n\n"
-                f"To save permanently add to config/config.yaml under publish_targets."
-            )
+        return header + details + (
+            "To save permanently add to config/config.yaml under publish_targets."
+        )
 
     def _is_publish_question(self, text: str) -> bool:
         return bool(re.search(
@@ -1257,6 +1292,36 @@ class BlogAction(BaseAction):
                 keywords = self.summarizer.get_keywords(content, top_n=5)
                 title = " ".join(w.capitalize() for w in keywords) if keywords else "Untitled Blog Post"
 
+        # Before staging the publish, check if this SFTP target has no
+        # template configured — if so, ask once whether to learn one.
+        # The user can always say `no` and proceed with the default.
+        chosen_target = (
+            self.publisher.targets.get(target_label) if target_label
+            else None
+        )
+        if (
+            chosen_target is not None
+            and chosen_target.target_type == PublishTargetType.SFTP
+            and not chosen_target.html_template
+            and not chosen_target.html_template_path
+            and not chosen_target.auto_detect_template
+        ):
+            self._set_session(
+                user_id, SESSION_AWAITING_TEMPLATE_OFFER,
+                target_label=chosen_target.label,
+                from_setup=False,
+                pending_title=title,
+            )
+            return (
+                f"Heads up — **{chosen_target.label}** doesn't have a "
+                f"blog template yet. Want me to grab the existing site's "
+                f"template before we publish?\n\n"
+                f"  **yes**     — fetch a sample post and learn the template now\n"
+                f"  **auto**    — auto-detect on the first publish (cached after)\n"
+                f"  **no**      — use the built-in default for this post\n"
+                f"  **folders** — show me the folders first\n"
+            )
+
         # Store pending publish state
         self._set_session(
             user_id, SESSION_PENDING_PUBLISH,
@@ -1278,11 +1343,171 @@ class BlogAction(BaseAction):
             f"  Target: {target_info}\n\n"
             f"**Preview:**\n{preview}\n\n"
             f"---\n"
+            f"  **preview**                    - See the full HTML before sending\n"
             f"  **confirm**                    - Publish now\n"
             f"  **change title** <new title>   - Rename before publishing\n"
             f"  **edit blog** <new content>    - Edit content first\n"
             f"  **cancel**                     - Abort\n"
         )
+
+    async def _handle_template_offer(
+        self,
+        session: dict[str, Any],
+        raw_input: str,
+        lower: str,
+        user_id: str,
+        engine: "SafestClaw",
+    ) -> str | None:
+        """
+        Handle the user's response to the proactive
+        "would you like me to learn your blog template?" prompt.
+
+        Accepts:
+          yes / sure / ok / please / go     → learn now
+          auto / later / first publish       → set auto_detect_template=True
+          no / skip / nevermind / default    → leave as-is
+          folders / list / browse            → show folders before learning
+          publish ...                        → bail out, run normal routing
+        """
+        stripped = lower.strip()
+        target_label = session.get("target_label")
+        from_setup = session.get("from_setup", False)
+
+        if not target_label or not self.publisher:
+            self._clear_session(user_id)
+            return None
+
+        target = self.publisher.targets.get(target_label)
+        if target is None:
+            self._clear_session(user_id)
+            return None
+
+        # Affirmative — learn now. If we got here from the publish path
+        # (not setup), continue into the publish preview after learning.
+        if stripped in (
+            "yes", "y", "sure", "ok", "okay", "please", "go", "do it",
+            "yeah", "yep", "yup", "absolutely", "fetch", "learn",
+        ):
+            pending_title = session.get("pending_title")
+            self._clear_session(user_id)
+            result = await self._learn_template(
+                f"learn template from {target_label}", engine,
+            )
+            if not from_setup:
+                # Re-stage the publish preview so the next `confirm` ships.
+                self._set_session(
+                    user_id, SESSION_PENDING_PUBLISH,
+                    pending_title=pending_title or "Untitled Blog Post",
+                    target_label=target_label,
+                )
+                return result + "\n\n" + (
+                    f"Template ready. Type **confirm** to publish "
+                    f"\"{pending_title}\" to {target_label}."
+                )
+            return result + "\n\n" + (
+                f"Now try `publish blog to {target_label}` to send a post."
+            )
+
+        # Auto-detect later
+        if stripped in ("auto", "later", "first publish", "on publish", "next time"):
+            target.auto_detect_template = True
+            saved = self._set_target_field_in_config(
+                target.label, "auto_detect_template", True, engine,
+            )
+            self._clear_session(user_id)
+            return (
+                f"Got it — I'll auto-detect the template on the first publish "
+                f"to **{target_label}** and cache it after that.\n"
+                f"Persisted to config: {'yes' if saved else 'no (in-memory only)'}\n\n"
+                f"Type `publish blog to {target_label}` whenever you're ready."
+            )
+
+        # Decline
+        if stripped in (
+            "no", "n", "nope", "skip", "nevermind", "never mind",
+            "default", "don't", "dont",
+        ):
+            pending_title = session.get("pending_title")
+            self._clear_session(user_id)
+            if not from_setup:
+                # Re-stage the publish preview so the user can confirm.
+                self._set_session(
+                    user_id, SESSION_PENDING_PUBLISH,
+                    pending_title=pending_title or "Untitled Blog Post",
+                    target_label=target_label,
+                )
+                return (
+                    f"OK — using the default template. Type **confirm** to "
+                    f"publish \"{pending_title}\" to {target_label}, or "
+                    f"**cancel** to abort."
+                )
+            return (
+                f"No problem — I'll use the built-in default template for "
+                f"**{target_label}**. You can change your mind later with "
+                f"`learn template from {target_label}` or by setting "
+                f"`auto_detect_template: true` in config.yaml."
+            )
+
+        # Show folders first
+        if stripped in ("folders", "list", "browse", "show folders"):
+            # Keep the offer alive — they can still answer yes/auto/no after.
+            folders_msg = await self._list_remote_folders(
+                f"list folders on {target_label}", engine,
+            )
+            return (
+                folders_msg
+                + "\n\n"
+                + "Once you know which folder, set the subfolder with "
+                + f"`setup blog publish sftp://{target.sftp_host} "
+                + f"{target.sftp_user} <pass> {target.sftp_remote_path} "
+                + "subfolder=<name>` and re-answer my template question.\n"
+                + "Or just say **yes** / **auto** / **no** to my earlier "
+                + "question."
+            )
+
+        # Anything that looks like a real command — bail out
+        if self._looks_like_command(lower):
+            self._clear_session(user_id)
+            return None
+
+        # Unrecognised — re-prompt with options
+        return (
+            f"I'm waiting on your call about **{target_label}**:\n\n"
+            f"  **yes**     — fetch a sample post and learn the template now\n"
+            f"  **auto**    — auto-detect on the first publish\n"
+            f"  **no**      — use the built-in default\n"
+            f"  **folders** — show me the folders first\n"
+        )
+
+    def _set_target_field_in_config(
+        self,
+        target_label: str,
+        field_name: str,
+        value: Any,
+        engine: "SafestClaw",
+    ) -> bool:
+        """Persist a single field on a publish_targets entry in config.yaml."""
+        try:
+            config_path = getattr(engine, "config_path", None)
+            if not config_path:
+                return False
+            config_path = Path(config_path)
+            if not config_path.exists():
+                return False
+            data = yaml.safe_load(config_path.read_text()) or {}
+            for entry in (data.get("publish_targets") or []):
+                if entry.get("label") == target_label:
+                    entry[field_name] = value
+                    break
+            else:
+                return False
+            config_path.write_text(
+                yaml.dump(data, default_flow_style=False, sort_keys=False)
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Could not persist {field_name} on target: {e}")
+            return False
 
     async def _handle_pending_publish(
         self,

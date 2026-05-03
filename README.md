@@ -191,6 +191,7 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 
 ### 📤 Blog Publishing — Preview, Templates, Repeat
 * **Preview before publishing** — `preview blog [to <target>]` renders the exact HTML that would be uploaded and saves a copy locally so you can open it in a browser
+* **Asks once, friendly** — when you set up a new SFTP target (or start a publish to one without a template) SafestClaw offers to learn your existing site template — answer `yes`, `auto`, `no`, or `folders`
 * **Browse remote folders** — `list folders on <target>` lists subdirectories under the target's remote path so you can pick where to publish (requires `pip install safestclaw[sftp]`)
 * **Auto-learn template from existing posts** — `learn template from <target>` downloads the most recent post on the server, detects title + content regions, replaces them with `{title}` / `{content}` placeholders, and saves the result as the target's template. Site chrome (head, nav, footer, sidebar) is preserved verbatim
 * **Or set `auto_detect_template: true`** on a target and the first publish learns and caches the template automatically — no manual step

@@ -9,6 +9,19 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 ## [Unreleased]
 
 ### Added
+- **Proactive "find your blog template?" prompt.** When you register a
+  new SFTP publish target — or when you start a publish to a target
+  that has no template configured — SafestClaw now asks once whether
+  you'd like it to fetch a sample post and learn the template from
+  your existing site. Replies: `yes` (learn now), `auto` (do it on
+  the first publish and cache), `no` (use the default), or `folders`
+  (browse the server's directories first). No more hunting for the
+  `learn template from <target>` command.
+  - Asks from `setup blog publish sftp://...` for any new SFTP target
+  - Asks from `publish blog to <target>` if the target still has no
+    template and `auto_detect_template` is off
+  - Saying `yes` or `no` from the publish path rolls straight into the
+    pending-publish preview so the next `confirm` ships the post
 - **SFTP folder browser** — `list folders [on <target>]` enumerates the
   subdirectories under the target's `remote_path` so you can pick where
   to publish without typing the path. Recognises an explicit base
