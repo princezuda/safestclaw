@@ -134,7 +134,7 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 
 ### 📅 Calendar Support
 * **ICS Files** — Import and parse .ics calendar files
-* **CalDAV** — Sync from Nextcloud, Radicale, iCloud, Fastmail, Google (`pip install caldav` — or, from a checkout, `pip install -e ".[caldav]"`)
+* **CalDAV** — Sync from Nextcloud, Radicale, iCloud, Fastmail, Google (`pip install safestclaw[caldav]`)
 * **Event filtering** — Today, upcoming, by date range
 * **Chat commands** — `calendar today`, `calendar upcoming 14`, `calendar import ~/cal.ics`, `calendar sync`, `calendar calendars`
 
@@ -173,7 +173,7 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **Transports** — `stdio` (Claude Desktop, IDE extensions), `sse`, `streamable-http`
 * **Run as a subprocess** — `safestclaw mcp` (the format MCP clients spawn)
 * **In-process HTTP** — enable `plugins.fastmcp.autostart` to expose a SSE/HTTP server when SafestClaw boots
-* **Opt-in** — `pip install fastmcp` (or, from a checkout, `pip install -e ".[mcp]"`), then enable in the setup wizard or `config.yaml`
+* **Opt-in** — `pip install safestclaw[mcp]`, then enable in the setup wizard or `config.yaml`
 
 ### 🔬 Real Research Sources
 * **arXiv** — Search academic papers across CS, math, physics, biology, and more (free, no API key)
@@ -188,6 +188,34 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **Model presets** — `setup ai local small` (1.3GB), `setup ai local coding`, `setup ai local writing`
 * **Status check** — `setup ai status` shows what's configured
 * **Zero config files** — No YAML editing needed, the command does it for you
+
+### 📤 Blog Publishing — Preview, Templates, Repeat
+* **Preview before publishing** — `preview blog [to <target>]` renders the exact HTML that would be uploaded and saves a copy locally so you can open it in a browser
+* **Asks once, friendly** — when you set up a new SFTP target (or start a publish to one without a template) SafestClaw offers to learn your existing site template — answer `yes`, `auto`, `no`, or `folders`
+* **Browse remote folders** — `list folders on <target>` lists subdirectories under the target's remote path so you can pick where to publish (requires `pip install safestclaw[sftp]`)
+* **Auto-learn template from existing posts** — `learn template from <target>` downloads the most recent post on the server, detects title + content regions, replaces them with `{title}` / `{content}` placeholders, and saves the result as the target's template. Site chrome (head, nav, footer, sidebar) is preserved verbatim
+* **Or set `auto_detect_template: true`** on a target and the first publish learns and caches the template automatically — no manual step
+* **Custom HTML template per target** — set `html_template` (inline) or `html_template_path` (file) on a `publish_targets` entry; placeholders: `{title}`, `{content}`, `{excerpt}`, `{date}`, `{slug}`
+* **Subfolder per site** — `sftp_subfolder: "blog"` (or set inline with `subfolder=blog/posts` on the setup command) so each post uploads to `{remote_path}/{subfolder}/<slug>.html`
+* **Repeat last publish** — `publish blog again` or `publish blog to here` reuses the last successful target, no retyping
+
+### 🤝 LLM Cascade with ML Fallback
+* **Provider cascade** — bad API key / quota / rate-limit / network failure on one provider auto-falls-through to the next configured one (cloud first, local last)
+* **Last-resort ML fallback** — when every LLM provider is unreachable, AI blog `rewrite` / `expand` / `headlines` use the deterministic ML stack (sumy summarisation + keyword heuristics) so you still get useful output
+* **Clear banner** — fallback responses are prefixed with `_(falling back to local ML)_` plus the original error so you know exactly what happened
+
+### 🛠️ First-Run Setup, Anywhere
+* **Same walkthrough in every channel** — CLI, web UI, Telegram all guide first-time users through local-only / cloud / hybrid / skip
+* **Conversational** — type a number or `skip`; no rich prompts that only work in a TTY
+* **Web UI banner** — driven by `/api/health.needs_setup`
+* **CLI nudge** — yellow setup-needed panel right after launch when config isn't complete
+* **Triggers any time `setup_completed` isn't set** — not just first launch; perfect for users who never finished setup
+
+### 📶 Offline-Aware
+* **Network probe with caching** — actions check connectivity before reaching out, falling back gracefully when offline
+* **`i'm offline` / `i'm online`** — pin offline mode any time (plane, metered link, etc.); SafestClaw stops probing and returns local/cached results until you switch back
+* **Friendly fallback messages** — when an academic search can't reach arXiv/Scholar/Wolfram, you get a clear explanation plus any matches from your previous research sessions
+* **No silent failures** — every offline reply tells you it's offline and how to try again
 
 ### 💬 Conversational Input
 * **Talk naturally** — "hey claw, lets publish this blog" works the same as `publish blog`
@@ -301,13 +329,18 @@ handled entirely locally with zero tokens consumed.
 
 ## Installation
 
-> **Heads up — name collision on PyPI.** The `safestclaw` name on PyPI is held by
-> an unrelated project. Running `pip install safestclaw` or `pipx install safestclaw`
-> will install that other package and crash with `ModuleNotFoundError: No module
-> named 'fcntl'` on Windows (issue #33). Install from this Git repo instead, as
-> shown below.
+### From PyPI (recommended)
 
-### Using pipx (recommended)
+```bash
+pip install safestclaw                  # core
+pip install "safestclaw[mcp]"           # + FastMCP plugin (Model Context Protocol)
+pip install "safestclaw[caldav]"        # + CalDAV calendar sync
+pip install "safestclaw[telegram]"      # + Telegram bot channel
+pip install "safestclaw[smarthome]"     # + Philips Hue / Home Assistant MQTT
+pip install "safestclaw[all]"           # everything except heavy ML deps
+```
+
+### Using pipx (isolated CLI install)
 
 ```bash
 # Install pipx if needed
@@ -319,16 +352,14 @@ brew install pipx
 python -m pip install --user pipx
 python -m pipx ensurepath
 
-pipx ensurepath
-
-# Install SafestClaw from this repo
-pipx install git+https://github.com/princezuda/safestclaw.git
+pipx install safestclaw
+# or with extras:
+pipx install "safestclaw[mcp,caldav]"
 ```
 
-### Using pip with virtual environment
+### Inside a virtual environment
 
 ```bash
-# Create and activate venv
 # Linux/macOS:
 python3 -m venv ~/.safestclaw-venv
 source ~/.safestclaw-venv/bin/activate
@@ -336,16 +367,16 @@ source ~/.safestclaw-venv/bin/activate
 python -m venv $HOME\.safestclaw-venv
 $HOME\.safestclaw-venv\Scripts\Activate.ps1
 
-# Install SafestClaw from this repo
-pip install git+https://github.com/princezuda/safestclaw.git
+pip install safestclaw
 ```
 
-### From source
+### From source (for contributors)
 
 ```bash
 git clone https://github.com/princezuda/safestclaw.git
 cd safestclaw
-pip install -e .
+pip install -e ".[dev]"
+pytest -q                       # 336 passed, 1 skipped
 ```
 
 ### Optional ML Features

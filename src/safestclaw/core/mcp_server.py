@@ -6,7 +6,7 @@ clients (Claude Desktop, IDE extensions, etc.) can call them directly.
 
 The bridge is built on top of FastMCP, which is an optional dependency:
 
-    pip install fastmcp
+    pip install safestclaw[mcp]
 
 If FastMCP is not installed, importing this module still succeeds — but
 ``build_mcp_server`` will raise ``ImportError`` when called.
@@ -80,8 +80,7 @@ def build_mcp_server(
     """
     if not HAS_FASTMCP:
         raise ImportError(
-            "fastmcp is not installed. Run: pip install fastmcp "
-            "(or, from a checkout: pip install -e \".[mcp]\")"
+            "fastmcp is not installed. Run: pip install safestclaw[mcp]"
         )
 
     excluded = set(DEFAULT_EXCLUDED_ACTIONS)
@@ -164,8 +163,7 @@ async def serve_mcp(
     """
     if not HAS_FASTMCP:
         raise ImportError(
-            "fastmcp is not installed. Run: pip install fastmcp "
-            "(or, from a checkout: pip install -e \".[mcp]\")"
+            "fastmcp is not installed. Run: pip install safestclaw[mcp]"
         )
 
     # Make sure config is loaded so actions can read provider settings.

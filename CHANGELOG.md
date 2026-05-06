@@ -9,6 +9,106 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 ## [Unreleased]
 
 ### Added
+- **AI provider cascade + local-ML fallback.** When an LLM call fails
+  (auth, quota, rate-limit, server, network), the configured providers
+  are tried in order — cloud first, then local Ollama / LM Studio /
+  llama.cpp / etc. last so we exhaust cheaper options before burning a
+  local round-trip.
+  - `AIResponse.error_kind` classifies failures
+    (`auth`/`quota`/`rate_limit`/`server`/`network`/`other`) so callers
+    can decide whether to retry or fall back.
+  - `AIWriter.generate` is now cascade-aware; the success path is
+    unchanged for callers.
+  - When **every** provider gives up, action callsites (currently AI
+    blog rewrite / expand / headlines) call into a new
+    `core/ml_fallback.py` module that produces useful output from the
+    deterministic ML stack (sumy summarisation, keyword-driven
+    headlines, etc.) and prepends a clear "_(falling back to local
+    ML)_" banner so the user knows what happened.
+- **First-run setup walkthrough in every channel.** Any user whose
+  config doesn't have `safestclaw.setup_completed: true` is walked
+  through setup conversationally on their next message — works in CLI,
+  web UI, Telegram, and any future chat channel that dispatches through
+  `engine.handle_message`.
+  - New `core/chat_setup.py` carries the same decisions as the rich
+    wizard (local-only / cloud / hybrid / skip), but as plain-text Q&A
+    so it works anywhere.
+  - Web UI shows a yellow "Setup not complete" banner driven by a new
+    `needs_setup` field on `/api/health`.
+  - CLI prints a yellow setup-needed panel after the regular banner.
+  - Replying `skip` at the welcome step marks setup complete so we stop
+    asking; the user can run the rich `safestclaw setup` any time.
+- **Network resilience + offline mode.** Every action that touches the
+  internet now degrades gracefully when the network is down.
+  - Process-wide `ConnectivityChecker` with cached HEAD probes against
+    `1.1.1.1` and Google's `/generate_204`. Probes are coalesced under
+    an asyncio lock and cached for 30 seconds so we don't beat the
+    network up.
+  - **User-pinned offline mode**: say `i'm offline` (also `go offline`,
+    `offline mode`, `i'm on a plane`, `no internet`) and SafestClaw
+    skips probes entirely, returns local/cached results, and tells you.
+    Say `i'm online` / `go online` to switch back; SafestClaw verifies
+    by re-probing.
+  - `with_network_fallback` helper: actions express
+    *"try the online thing; on any network-shaped failure, run the
+    offline fallback and tag the response."*
+  - Research action wired up first: arXiv / Semantic Scholar / Wolfram
+    Alpha all detect offline mode (or catch live network errors), serve
+    a friendly explanation, and surface matches from your previous
+    research sessions when they exist.
+- **Proactive "find your blog template?" prompt.** When you register a
+  new SFTP publish target — or when you start a publish to a target
+  that has no template configured — SafestClaw now asks once whether
+  you'd like it to fetch a sample post and learn the template from
+  your existing site. Replies: `yes` (learn now), `auto` (do it on
+  the first publish and cache), `no` (use the default), or `folders`
+  (browse the server's directories first). No more hunting for the
+  `learn template from <target>` command.
+  - Asks from `setup blog publish sftp://...` for any new SFTP target
+  - Asks from `publish blog to <target>` if the target still has no
+    template and `auto_detect_template` is off
+  - Saying `yes` or `no` from the publish path rolls straight into the
+    pending-publish preview so the next `confirm` ships the post
+- **SFTP folder browser** — `list folders [on <target>]` enumerates the
+  subdirectories under the target's `remote_path` so you can pick where
+  to publish without typing the path. Recognises an explicit base
+  override too: `list folders on myhost /var/www/html`.
+- **Auto-learn HTML template from existing posts** — `learn template
+  from <target>` downloads the most recent `.html` post in the target's
+  remote folder, identifies the title (`<h1>` / `<title>`) and main
+  content area (`<article>`, `<main>`, `.post-content`, …), replaces
+  them with `{title}` / `{content}` placeholders, and saves the result
+  as the target's `html_template`. Existing site chrome (head, nav,
+  footer, sidebar, scripts, styles) is preserved verbatim.
+- **`auto_detect_template: true`** target field — runs the same template
+  learner automatically on the first publish if no template is set;
+  caches the result on the target so subsequent publishes are instant.
+  Falls back to the default template on any failure.
+
+## [0.4.1] - 2026-05-03 — first PyPI release
+
+### Added
+- **Blog publishing — preview, custom HTML template, subfolder, repeat
+  last target.**
+  - `preview blog [to <target>]` renders the exact HTML that would be
+    uploaded and saves a copy under `<blog_dir>/previews/<slug>.html`
+    so you can open it in a browser before publishing
+  - In a pending-publish flow, `preview` shows the rendered HTML before
+    you confirm
+  - `publish blog again` / `publish blog to here` repeats the last
+    successful target — the action remembers it per-user via engine
+    memory
+  - `PublishTarget.html_template` (inline) and `html_template_path`
+    (file) — placeholders: `{title}`, `{content}`, `{excerpt}`,
+    `{date}`, `{slug}`. When unset the built-in default template is
+    used. Bad placeholders fall back to the default rather than crash
+  - `PublishTarget.sftp_subfolder` — appended under
+    `sftp_remote_path` so each post uploads to
+    `{remote_path}/{subfolder}/<slug>.html`. The setup-publish chat
+    command picks it up from a trailing `subfolder=blog/posts` token;
+    the standalone CLI takes `--sftp-subfolder` and `--html-template`
+  - New CLI flag: `safestclaw publish --preview` prints the HTML
+    without uploading
 - **Conversational input handling.** SafestClaw now recognises
   sentence-style requests, not just terse commands.
   - Parser strips "hey claw, please", "id like to", "lets try", "can you",
@@ -59,7 +159,7 @@ Every huge milestone, we add something new. We just hit **100 stars!**
 - **FastMCP plugin** — every SafestClaw action is now optionally exposed as a
   Model Context Protocol tool, so MCP-aware clients (Claude Desktop, IDE
   extensions, agents) can call them directly.
-  - New optional dep: `pip install fastmcp` (or, from a checkout, `pip install -e ".[mcp]"`)
+  - New optional dep: `pip install safestclaw[mcp]`
   - New plugin at `plugins/official/fastmcp_server.py`
   - New CLI: `safestclaw mcp [--transport stdio|sse|streamable-http]`
   - Setup wizard now offers an MCP step

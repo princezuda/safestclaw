@@ -646,7 +646,13 @@ class TestPublishRemoteFlow(unittest.TestCase):
         result = run(self.ba._publish_remote(
             "publish blog to sftp://192.168.0.1 deploy secret", self.user,
         ))
-        self.assertIn("Ready to Publish", result)
+        # New flow: when the SFTP target has no template configured the
+        # action proactively asks whether to learn one before showing the
+        # publish preview. Confirm we got the template offer and that the
+        # publisher was registered.
+        self.assertIn("template", result.lower())
+        self.assertIsNotNone(self.ba.publisher)
+        self.assertIn("sftp-192.168.0.1", self.ba.publisher.targets)
 
     def test_no_draft_returns_error(self):
         result = run(self.ba._publish_remote(

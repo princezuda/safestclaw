@@ -52,6 +52,10 @@ class PublishTarget:
     sftp_password: str = ""
     sftp_key_path: str = ""
     sftp_remote_path: str = "/var/www/html/blog"
+    # Optional sub-directory under sftp_remote_path. Useful when the
+    # site already has a posts directory like "posts/" or "articles/".
+    # Each post is uploaded to {sftp_remote_path}/{sftp_subfolder}/<slug>.html.
+    sftp_subfolder: str = ""
     # WordPress-specific
     wp_status: str = "publish"
     wp_category_ids: list[int] = field(default_factory=list)
@@ -65,8 +69,43 @@ class PublishTarget:
     api_method: str = "POST"
     api_headers: dict[str, str] = field(default_factory=dict)
     api_body_template: str = ""
+    # Custom HTML wrapper for SFTP / file targets. ``html_template_path``
+    # points to a file on disk; ``html_template`` is the inline string.
+    # Either may use the placeholders ``{title}``, ``{content}``,
+    # ``{excerpt}``, ``{date}``, ``{slug}``. When neither is set the
+    # built-in default template is used.
+    html_template_path: str = ""
+    html_template: str = ""
+    # When True and no template is set, the publisher will fetch a
+    # recent post from the target's remote folder, detect title +
+    # content regions, and use that as the template (cached on the
+    # target object after the first publish).
+    auto_detect_template: bool = False
     # General
     enabled: bool = True
+
+    def remote_dir(self) -> str:
+        """Return the SFTP target directory, including any subfolder."""
+        base = self.sftp_remote_path.rstrip("/")
+        if self.sftp_subfolder:
+            sub = self.sftp_subfolder.strip("/")
+            if sub:
+                return f"{base}/{sub}"
+        return base
+
+    def load_html_template(self) -> str:
+        """Return the template string for this target, or '' if none."""
+        if self.html_template:
+            return self.html_template
+        if self.html_template_path:
+            try:
+                from pathlib import Path
+                p = Path(self.html_template_path).expanduser()
+                if p.exists():
+                    return p.read_text()
+            except Exception:
+                return ""
+        return ""
 
 
 @dataclass
@@ -553,10 +592,13 @@ class BlogPublisher:
         safe_slug = slug or re.sub(r'[^\w\s-]', '', title)[:50].strip().replace(' ', '-').lower()
         filename = f"{timestamp}-{safe_slug}.html"
 
-        html_content = self._generate_html(title, content, excerpt, timestamp)
+        html_content = self._generate_html(
+            title, content, excerpt, timestamp,
+            target=target, slug=safe_slug,
+        )
 
-        # Try sftp command first (no extra deps)
-        remote_path = f"{target.sftp_remote_path.rstrip('/')}/{filename}"
+        # Honor sftp_subfolder so multiple sites can share one base path.
+        remote_path = f"{target.remote_dir()}/{filename}"
 
         result = await self._sftp_upload_via_command(
             target, html_content, remote_path, filename,
@@ -704,14 +746,68 @@ class BlogPublisher:
         content: str,
         excerpt: str,
         date: str,
+        target: PublishTarget | None = None,
+        slug: str = "",
     ) -> str:
-        """Generate a standalone HTML blog post."""
+        """Generate a standalone HTML blog post.
+
+        If ``target`` has a custom template (inline or via path) it is
+        rendered with ``{title}``, ``{content}``, ``{excerpt}``,
+        ``{date}``, ``{slug}`` placeholders. Otherwise the built-in
+        default template is used.
+        """
         # Convert plain text to HTML paragraphs if not already HTML
         if "<p>" not in content and "<div>" not in content:
             paragraphs = content.split("\n\n")
-            html_body = "\n".join(f"<p>{p.strip()}</p>" for p in paragraphs if p.strip())
+            html_body = "\n".join(
+                f"<p>{p.strip()}</p>" for p in paragraphs if p.strip()
+            )
         else:
             html_body = content
+
+        # Custom template wins when present.
+        if target is not None:
+            template = target.load_html_template()
+
+            # Opt-in auto-detection: sniff a sample post from the
+            # remote folder and learn the template once, then cache it
+            # on the target so subsequent publishes are fast.
+            if (
+                not template
+                and getattr(target, "auto_detect_template", False)
+                and target.target_type == PublishTargetType.SFTP
+            ):
+                try:
+                    from safestclaw.core.sftp_browser import (
+                        learn_template_from_target,
+                    )
+                    learned, source = learn_template_from_target(target)
+                    target.html_template = learned
+                    template = learned
+                    logger.info(
+                        "Auto-learned HTML template for %s from %s",
+                        target.label, source,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "auto_detect_template failed for %s: %s — "
+                        "falling back to default template.",
+                        target.label, e,
+                    )
+
+            if template:
+                try:
+                    return template.format(
+                        title=title,
+                        content=html_body,
+                        excerpt=excerpt or "",
+                        date=date,
+                        slug=slug or "",
+                    )
+                except (KeyError, IndexError):
+                    # Bad placeholder — fall through to the default rather
+                    # than break the publish.
+                    pass
 
         excerpt_meta = f'<meta name="description" content="{excerpt[:160]}">' if excerpt else ""
 
@@ -912,6 +1008,37 @@ class BlogPublisher:
 
     # ── Configuration loading ────────────────────────────────────────────────
 
+    def render_preview(
+        self,
+        title: str,
+        content: str,
+        excerpt: str = "",
+        slug: str = "",
+        target_label: str | None = None,
+    ) -> tuple[str, PublishTarget | None]:
+        """
+        Render the exact HTML that would be uploaded for `target_label`.
+
+        Returns ``(html, target)``. ``target`` is None when no matching
+        target is configured (in which case ``html`` falls back to the
+        default template). Useful for preview-before-publish flows.
+        """
+        target: PublishTarget | None = None
+        if target_label and target_label in self.targets:
+            target = self.targets[target_label]
+        elif self.targets:
+            # First registered target — same default as `publish` uses.
+            target = next(iter(self.targets.values()))
+        timestamp = datetime.now().strftime("%Y-%m-%d")
+        safe_slug = slug or re.sub(
+            r"[^\w\s-]", "", title
+        )[:50].strip().replace(" ", "-").lower()
+        html = self._generate_html(
+            title, content, excerpt, timestamp,
+            target=target, slug=safe_slug,
+        )
+        return html, target
+
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "BlogPublisher":
         """
@@ -953,6 +1080,10 @@ class BlogPublisher:
                 sftp_password=t.get("sftp_password", ""),
                 sftp_key_path=t.get("sftp_key_path", ""),
                 sftp_remote_path=t.get("sftp_remote_path", "/var/www/html/blog"),
+                sftp_subfolder=t.get("sftp_subfolder", ""),
+                html_template_path=t.get("html_template_path", ""),
+                html_template=t.get("html_template", ""),
+                auto_detect_template=t.get("auto_detect_template", False),
                 wp_status=t.get("wp_status", "publish"),
                 wp_category_ids=t.get("wp_category_ids", []),
                 wp_tag_ids=t.get("wp_tag_ids", []),

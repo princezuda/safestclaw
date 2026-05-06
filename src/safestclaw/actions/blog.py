@@ -18,6 +18,7 @@ Features:
 - Multiple AI API keys and publishing targets
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -46,6 +47,10 @@ SESSION_AWAITING_CHOICE = "awaiting_choice"
 SESSION_AWAITING_TOPIC = "awaiting_topic"
 SESSION_REVIEWING = "reviewing"
 SESSION_PENDING_PUBLISH = "pending_publish"
+# Proactive template-offer flow: after a new SFTP target is registered
+# (or before a first publish to a target with no template) we ask
+# whether to find and reuse the existing site template.
+SESSION_AWAITING_TEMPLATE_OFFER = "awaiting_template_offer"
 
 
 class BlogAction(BaseAction):
@@ -212,6 +217,14 @@ class BlogAction(BaseAction):
         # Publishing commands
         if self._is_setup_publish(lower):
             return await self._setup_publish(raw_input, user_id, engine)
+        if self._is_preview(lower):
+            return await self._preview_blog(raw_input, user_id, engine)
+        if self._is_publish_again(lower):
+            return await self._publish_again(user_id, engine)
+        if self._is_list_folders(lower):
+            return await self._list_remote_folders(raw_input, engine)
+        if self._is_learn_template(lower):
+            return await self._learn_template(raw_input, engine)
         if self._is_publish_remote(lower):
             return await self._publish_remote(raw_input, user_id)
         if self._is_list_targets(lower):
@@ -326,7 +339,14 @@ class BlogAction(BaseAction):
             return await self._handle_review(raw_input, lower, user_id, engine)
 
         elif state == SESSION_PENDING_PUBLISH:
-            return await self._handle_pending_publish(session, raw_input, lower, user_id)
+            return await self._handle_pending_publish(
+                session, raw_input, lower, user_id, engine,
+            )
+
+        elif state == SESSION_AWAITING_TEMPLATE_OFFER:
+            return await self._handle_template_offer(
+                session, raw_input, lower, user_id, engine,
+            )
 
         return None
 
@@ -661,6 +681,41 @@ class BlogAction(BaseAction):
             text,
         ))
 
+    def _is_preview(self, text: str) -> bool:
+        """Match `preview blog`, `preview blog to <target>`, `show preview`."""
+        return bool(re.search(
+            r"^(?:preview|render)\s+(?:blog|the\s+blog|post)\b|"
+            r"^show\s+preview\b|"
+            r"^(?:preview|render)\s*$",
+            text,
+        ))
+
+    def _is_publish_again(self, text: str) -> bool:
+        """Match `publish blog again`, `publish again`, `republish`, `publish blog to here`."""
+        return bool(re.search(
+            r"^(?:publish|upload|deploy)\s+(?:blog\s+)?again\b|"
+            r"^republish(?:\s+blog)?\b|"
+            r"^publish\s+(?:blog\s+)?to\s+(?:here|same|last|previous)\b",
+            text,
+        ))
+
+    def _is_list_folders(self, text: str) -> bool:
+        """Match `list folders [on <target>]`, `browse folders on <target>`."""
+        return bool(re.search(
+            r"^(?:list|show|browse)\s+(?:remote\s+)?folders?\b|"
+            r"^(?:list|show|browse)\s+(?:remote\s+)?(?:dirs?|directories)\b|"
+            r"^pick\s+folder\b",
+            text,
+        ))
+
+    def _is_learn_template(self, text: str) -> bool:
+        """Match `learn template [from <target>]`, `grab template`, `auto template`."""
+        return bool(re.search(
+            r"^(?:learn|grab|fetch|sniff|detect|auto)\s+(?:blog\s+)?template\b|"
+            r"^template\s+(?:from|learn|sniff)\b",
+            text,
+        ))
+
     def _is_setup_publish(self, text: str) -> bool:
         return bool(re.search(
             r"setup\s+(blog\s+)?publish|"
@@ -774,7 +829,27 @@ class BlogAction(BaseAction):
         response = await self.ai_writer.rewrite_blog(content)
 
         if response.error:
-            return f"AI rewrite failed: {response.error}"
+            # Cascade exhausted every configured provider — fall back to
+            # local ML so the user gets *something* useful instead of an
+            # error wall.
+            from safestclaw.core.ml_fallback import (
+                fallback_rewrite,
+                offline_ml_banner,
+            )
+            new_content = fallback_rewrite(content)
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+            new_draft = f"[{timestamp}] ML-rewritten (offline fallback)\n{new_content}\n"
+            draft_path.write_text(new_draft)
+            preview = new_content[:500] + (
+                "..." if len(new_content) > 500 else ""
+            )
+            return (
+                offline_ml_banner(f"AI rewrite failed: {response.error}")
+                + f"Blog draft rewritten by local ML.\n\n"
+                f"Preview:\n{preview}\n\n"
+                f"Use 'publish blog' to save locally or 'publish blog to "
+                f"<target>' to publish."
+            )
 
         # Replace draft content
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -808,7 +883,23 @@ class BlogAction(BaseAction):
         response = await self.ai_writer.expand_blog(content)
 
         if response.error:
-            return f"AI expand failed: {response.error}"
+            from safestclaw.core.ml_fallback import (
+                fallback_expand,
+                offline_ml_banner,
+            )
+            new_content = fallback_expand(content)
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+            draft_path.write_text(
+                f"[{timestamp}] ML-expanded (offline fallback)\n{new_content}\n"
+            )
+            return (
+                offline_ml_banner(f"AI expand failed: {response.error}")
+                + f"Blog draft expanded by local ML.\n\n"
+                f"Preview:\n{new_content[:500]}"
+                + ("..." if len(new_content) > 500 else "")
+                + "\n\nUse 'publish blog' to save or 'publish blog to "
+                "<target>' to publish."
+            )
 
         # Replace draft content
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -838,7 +929,19 @@ class BlogAction(BaseAction):
         response = await self.ai_writer.generate_headlines(content)
 
         if response.error:
-            return f"AI headline generation failed: {response.error}"
+            from safestclaw.core.ml_fallback import (
+                fallback_headlines,
+                offline_ml_banner,
+            )
+            return (
+                offline_ml_banner(
+                    f"AI headlines failed: {response.error}"
+                )
+                + "**Local headline candidates**\n\n"
+                + fallback_headlines(content)
+                + "\n\nUse 'publish blog <Your Chosen Title>' to publish "
+                "with a title."
+            )
 
         return (
             f"**AI-Generated Headlines**\n"
@@ -961,6 +1064,17 @@ class BlogAction(BaseAction):
         if not target:
             return self._setup_publish_help()
 
+        # SFTP-only convenience: pull a trailing "/subfolder=..." or
+        # "subfolder <path>" off the raw input so users can register
+        # `sftp://host user pass /var/www/html subfolder=blog/posts`.
+        if target.target_type == PublishTargetType.SFTP:
+            sub_m = re.search(
+                r"(?:subfolder|folder|sub)\s*[=:]?\s*([\w\-/]+)",
+                raw_input, re.IGNORECASE,
+            )
+            if sub_m:
+                target.sftp_subfolder = sub_m.group(1).strip("/")
+
         # Save to config.yaml for persistence
         saved = self._save_publish_target_to_config(target, engine)
 
@@ -970,26 +1084,52 @@ class BlogAction(BaseAction):
         self.publisher.add_target(target)
 
         location = target.url or target.sftp_host
+        header = (
+            "**Publish target saved!**\n\n"
+            if saved
+            else "**Target active this session** (could not write to config).\n\n"
+        )
+        details = (
+            f"  Label:    {target.label}\n"
+            f"  Type:     {target.target_type.value}\n"
+            f"  Location: {location}\n\n"
+        )
+
+        # Proactively offer to learn the existing site's HTML template
+        # for SFTP targets — way friendlier than expecting the user to
+        # discover `learn template from <target>` on their own.
+        if (
+            target.target_type == PublishTargetType.SFTP
+            and not target.html_template
+            and not target.html_template_path
+        ):
+            self._set_session(
+                user_id, SESSION_AWAITING_TEMPLATE_OFFER,
+                target_label=target.label,
+                from_setup=True,
+            )
+            return header + details + (
+                "Would you like me to find your blog's existing template and "
+                "use it for new posts? That way articles match your site "
+                "instead of using SafestClaw's generic style.\n\n"
+                "  **yes**       — fetch a sample post now and learn the template\n"
+                "  **auto**      — auto-detect on the first publish (cached after)\n"
+                "  **no**        — skip; I'll use the built-in default template\n"
+                "  **folders**   — show folders on the server first so I sample the right one\n"
+            )
+
+        # Non-SFTP / template already configured: keep the original message
         if saved:
-            return (
-                f"**Publish target saved!**\n\n"
-                f"  Label:    {target.label}\n"
-                f"  Type:     {target.target_type.value}\n"
-                f"  Location: {location}\n\n"
+            return header + details + (
                 f"Use it any time:\n"
                 f"  publish blog to {target.label}\n"
                 f"  publish blog to all\n\n"
                 f"Remove later with:  setup blog publish remove {target.label}\n"
                 f"List all targets:   setup blog publish list"
             )
-        else:
-            return (
-                f"**Target active this session** (could not write to config).\n\n"
-                f"  Label:    {target.label}\n"
-                f"  Type:     {target.target_type.value}\n"
-                f"  Location: {location}\n\n"
-                f"To save permanently add to config/config.yaml under publish_targets."
-            )
+        return header + details + (
+            "To save permanently add to config/config.yaml under publish_targets."
+        )
 
     def _is_publish_question(self, text: str) -> bool:
         return bool(re.search(
@@ -1200,6 +1340,36 @@ class BlogAction(BaseAction):
                 keywords = self.summarizer.get_keywords(content, top_n=5)
                 title = " ".join(w.capitalize() for w in keywords) if keywords else "Untitled Blog Post"
 
+        # Before staging the publish, check if this SFTP target has no
+        # template configured — if so, ask once whether to learn one.
+        # The user can always say `no` and proceed with the default.
+        chosen_target = (
+            self.publisher.targets.get(target_label) if target_label
+            else None
+        )
+        if (
+            chosen_target is not None
+            and chosen_target.target_type == PublishTargetType.SFTP
+            and not chosen_target.html_template
+            and not chosen_target.html_template_path
+            and not chosen_target.auto_detect_template
+        ):
+            self._set_session(
+                user_id, SESSION_AWAITING_TEMPLATE_OFFER,
+                target_label=chosen_target.label,
+                from_setup=False,
+                pending_title=title,
+            )
+            return (
+                f"Heads up — **{chosen_target.label}** doesn't have a "
+                f"blog template yet. Want me to grab the existing site's "
+                f"template before we publish?\n\n"
+                f"  **yes**     — fetch a sample post and learn the template now\n"
+                f"  **auto**    — auto-detect on the first publish (cached after)\n"
+                f"  **no**      — use the built-in default for this post\n"
+                f"  **folders** — show me the folders first\n"
+            )
+
         # Store pending publish state
         self._set_session(
             user_id, SESSION_PENDING_PUBLISH,
@@ -1221,11 +1391,171 @@ class BlogAction(BaseAction):
             f"  Target: {target_info}\n\n"
             f"**Preview:**\n{preview}\n\n"
             f"---\n"
+            f"  **preview**                    - See the full HTML before sending\n"
             f"  **confirm**                    - Publish now\n"
             f"  **change title** <new title>   - Rename before publishing\n"
             f"  **edit blog** <new content>    - Edit content first\n"
             f"  **cancel**                     - Abort\n"
         )
+
+    async def _handle_template_offer(
+        self,
+        session: dict[str, Any],
+        raw_input: str,
+        lower: str,
+        user_id: str,
+        engine: "SafestClaw",
+    ) -> str | None:
+        """
+        Handle the user's response to the proactive
+        "would you like me to learn your blog template?" prompt.
+
+        Accepts:
+          yes / sure / ok / please / go     → learn now
+          auto / later / first publish       → set auto_detect_template=True
+          no / skip / nevermind / default    → leave as-is
+          folders / list / browse            → show folders before learning
+          publish ...                        → bail out, run normal routing
+        """
+        stripped = lower.strip()
+        target_label = session.get("target_label")
+        from_setup = session.get("from_setup", False)
+
+        if not target_label or not self.publisher:
+            self._clear_session(user_id)
+            return None
+
+        target = self.publisher.targets.get(target_label)
+        if target is None:
+            self._clear_session(user_id)
+            return None
+
+        # Affirmative — learn now. If we got here from the publish path
+        # (not setup), continue into the publish preview after learning.
+        if stripped in (
+            "yes", "y", "sure", "ok", "okay", "please", "go", "do it",
+            "yeah", "yep", "yup", "absolutely", "fetch", "learn",
+        ):
+            pending_title = session.get("pending_title")
+            self._clear_session(user_id)
+            result = await self._learn_template(
+                f"learn template from {target_label}", engine,
+            )
+            if not from_setup:
+                # Re-stage the publish preview so the next `confirm` ships.
+                self._set_session(
+                    user_id, SESSION_PENDING_PUBLISH,
+                    pending_title=pending_title or "Untitled Blog Post",
+                    target_label=target_label,
+                )
+                return result + "\n\n" + (
+                    f"Template ready. Type **confirm** to publish "
+                    f"\"{pending_title}\" to {target_label}."
+                )
+            return result + "\n\n" + (
+                f"Now try `publish blog to {target_label}` to send a post."
+            )
+
+        # Auto-detect later
+        if stripped in ("auto", "later", "first publish", "on publish", "next time"):
+            target.auto_detect_template = True
+            saved = self._set_target_field_in_config(
+                target.label, "auto_detect_template", True, engine,
+            )
+            self._clear_session(user_id)
+            return (
+                f"Got it — I'll auto-detect the template on the first publish "
+                f"to **{target_label}** and cache it after that.\n"
+                f"Persisted to config: {'yes' if saved else 'no (in-memory only)'}\n\n"
+                f"Type `publish blog to {target_label}` whenever you're ready."
+            )
+
+        # Decline
+        if stripped in (
+            "no", "n", "nope", "skip", "nevermind", "never mind",
+            "default", "don't", "dont",
+        ):
+            pending_title = session.get("pending_title")
+            self._clear_session(user_id)
+            if not from_setup:
+                # Re-stage the publish preview so the user can confirm.
+                self._set_session(
+                    user_id, SESSION_PENDING_PUBLISH,
+                    pending_title=pending_title or "Untitled Blog Post",
+                    target_label=target_label,
+                )
+                return (
+                    f"OK — using the default template. Type **confirm** to "
+                    f"publish \"{pending_title}\" to {target_label}, or "
+                    f"**cancel** to abort."
+                )
+            return (
+                f"No problem — I'll use the built-in default template for "
+                f"**{target_label}**. You can change your mind later with "
+                f"`learn template from {target_label}` or by setting "
+                f"`auto_detect_template: true` in config.yaml."
+            )
+
+        # Show folders first
+        if stripped in ("folders", "list", "browse", "show folders"):
+            # Keep the offer alive — they can still answer yes/auto/no after.
+            folders_msg = await self._list_remote_folders(
+                f"list folders on {target_label}", engine,
+            )
+            return (
+                folders_msg
+                + "\n\n"
+                + "Once you know which folder, set the subfolder with "
+                + f"`setup blog publish sftp://{target.sftp_host} "
+                + f"{target.sftp_user} <pass> {target.sftp_remote_path} "
+                + "subfolder=<name>` and re-answer my template question.\n"
+                + "Or just say **yes** / **auto** / **no** to my earlier "
+                + "question."
+            )
+
+        # Anything that looks like a real command — bail out
+        if self._looks_like_command(lower):
+            self._clear_session(user_id)
+            return None
+
+        # Unrecognised — re-prompt with options
+        return (
+            f"I'm waiting on your call about **{target_label}**:\n\n"
+            f"  **yes**     — fetch a sample post and learn the template now\n"
+            f"  **auto**    — auto-detect on the first publish\n"
+            f"  **no**      — use the built-in default\n"
+            f"  **folders** — show me the folders first\n"
+        )
+
+    def _set_target_field_in_config(
+        self,
+        target_label: str,
+        field_name: str,
+        value: Any,
+        engine: "SafestClaw",
+    ) -> bool:
+        """Persist a single field on a publish_targets entry in config.yaml."""
+        try:
+            config_path = getattr(engine, "config_path", None)
+            if not config_path:
+                return False
+            config_path = Path(config_path)
+            if not config_path.exists():
+                return False
+            data = yaml.safe_load(config_path.read_text()) or {}
+            for entry in (data.get("publish_targets") or []):
+                if entry.get("label") == target_label:
+                    entry[field_name] = value
+                    break
+            else:
+                return False
+            config_path.write_text(
+                yaml.dump(data, default_flow_style=False, sort_keys=False)
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Could not persist {field_name} on target: {e}")
+            return False
 
     async def _handle_pending_publish(
         self,
@@ -1233,16 +1563,27 @@ class BlogAction(BaseAction):
         raw_input: str,
         lower: str,
         user_id: str,
+        engine: "SafestClaw | None" = None,
     ) -> str | None:
         """Handle input while a publish is staged and awaiting confirmation."""
         stripped = lower.strip()
+
+        # Show the full HTML render before confirming
+        if stripped in ("preview", "show preview", "render", "show me"):
+            target_label = session.get("target_label")
+            preview_input = "preview blog" + (
+                f" to {target_label}" if target_label else ""
+            )
+            return await self._preview_blog(preview_input, user_id, engine)
 
         # Confirm → publish
         if stripped in ("confirm", "yes", "publish", "publish it", "go", "send it", "do it"):
             title = session.get("pending_title", "Untitled Blog Post")
             target_label = session.get("target_label")
             self._clear_session(user_id)
-            return await self._do_publish(title, target_label, user_id)
+            return await self._do_publish(
+                title, target_label, user_id, engine=engine,
+            )
 
         # Change title
         title_match = re.match(r'(?:change\s+)?(?:set\s+)?title\s+(.+)', stripped)
@@ -1278,6 +1619,7 @@ class BlogAction(BaseAction):
         target_info = session.get("target_label") or "all configured targets"
         return (
             f"**Pending publish** — \"{title}\" → {target_info}\n\n"
+            f"  **preview**                    - See the full HTML before sending\n"
             f"  **confirm**                    - Publish now\n"
             f"  **change title** <new title>   - Rename\n"
             f"  **edit blog** <content>        - Edit content (cancels pending publish)\n"
@@ -1289,6 +1631,7 @@ class BlogAction(BaseAction):
         title: str,
         target_label: str | None,
         user_id: str,
+        engine: "SafestClaw | None" = None,
     ) -> str:
         """Execute the actual remote publish after confirmation."""
         if not self.publisher or not self.publisher.targets:
@@ -1339,9 +1682,353 @@ class BlogAction(BaseAction):
                 lines.append(f"  {r.target_label} ({r.target_type}): FAILED - {r.error}")
 
         if any_success:
+            # Remember the last successful target so `publish blog again`
+            # / `publish blog to here` repeats it without retyping.
+            if engine is not None and target_label:
+                try:
+                    await engine.memory.set(
+                        f"{self._LAST_TARGET_KEY}:{user_id}",
+                        target_label,
+                    )
+                except Exception:
+                    pass
             lines.extend(["", "Use 'set front page <post_id> on <target>' to feature this post."])
+            lines.extend([
+                "",
+                "Tip: type **publish blog again** to repeat this publish next time."
+            ])
 
         return "\n".join(lines)
+
+    # ──────────────────────────────────────────────────────────────────
+    # Preview & saved-target helpers
+    # ──────────────────────────────────────────────────────────────────
+
+    _LAST_TARGET_KEY = "blog_last_target"
+
+    async def _preview_blog(
+        self,
+        raw_input: str,
+        user_id: str,
+        engine: "SafestClaw",
+    ) -> str:
+        """
+        Render the exact HTML that would be uploaded for the chosen
+        target (or the first target / inline target). Useful for
+        "see the full thing before publishing".
+        """
+        draft_path = self._get_draft_path(user_id)
+        if not draft_path.exists():
+            return "No blog draft yet. Write something first with `write blog news ...`."
+        content = self._get_entries_text(draft_path.read_text())
+        if not content.strip():
+            return "Blog draft is empty. Add some entries first."
+
+        title = self._derive_title(content)
+
+        # Pick a target: explicit "preview blog to <label>" wins, then
+        # last-used, then first configured.
+        target_label = None
+        m = re.search(r"to\s+(\S+)", raw_input, re.IGNORECASE)
+        if m:
+            target_label = m.group(1).strip()
+
+        if not target_label:
+            try:
+                target_label = await engine.memory.get(
+                    f"{self._LAST_TARGET_KEY}:{user_id}"
+                )
+            except Exception:
+                target_label = None
+
+        if not self.publisher:
+            self.publisher = BlogPublisher.from_config(engine.config or {})
+
+        excerpt = content[:160].strip()
+        slug = re.sub(r"[^\w\s-]", "", title)[:50].strip().replace(" ", "-").lower()
+
+        html, target = self.publisher.render_preview(
+            title=title,
+            content=content,
+            excerpt=excerpt,
+            slug=slug,
+            target_label=target_label,
+        )
+
+        # Trim the HTML to a reasonable preview size — point users at the
+        # local file for the full render if it's huge.
+        max_chars = 4000
+        truncated = len(html) > max_chars
+        body = html[:max_chars]
+        target_label_str = target.label if target else "(default template — no target)"
+
+        upload_path = ""
+        if target and target.target_type == PublishTargetType.SFTP:
+            upload_path = (
+                f"{target.remote_dir()}/"
+                f"{datetime.now().strftime('%Y-%m-%d')}-{slug}.html"
+            )
+
+        # Save the rendered HTML to the user's blog dir so they can open
+        # it in a browser to see the full thing.
+        preview_dir = self.blog_dir / "previews"
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        preview_file = preview_dir / f"{slug or 'preview'}.html"
+        try:
+            preview_file.write_text(html)
+        except OSError:
+            preview_file = None  # type: ignore[assignment]
+
+        lines = [
+            f"**Preview — {title}**",
+            f"Target: {target_label_str}"
+            + (f"  →  {upload_path}" if upload_path else ""),
+            "",
+            "```html",
+            body,
+        ]
+        if truncated:
+            lines.append("... (truncated — preview saved to file)")
+        lines.append("```")
+        if preview_file:
+            lines.extend([
+                "",
+                f"Full preview saved: {preview_file}",
+            ])
+        lines.extend([
+            "",
+            "Next:",
+            f"  `publish blog{(' to ' + target_label) if target_label else ''}` "
+            "to send it",
+            "  `cancel` to keep the draft and skip publishing",
+        ])
+        return "\n".join(lines)
+
+    async def _publish_again(
+        self,
+        user_id: str,
+        engine: "SafestClaw",
+    ) -> str:
+        """Repeat the last successful publish for this user."""
+        try:
+            last = await engine.memory.get(f"{self._LAST_TARGET_KEY}:{user_id}")
+        except Exception:
+            last = None
+        if not last:
+            return (
+                "No previous publish to repeat. "
+                "Use `publish blog to <target>` first."
+            )
+
+        draft_path = self._get_draft_path(user_id)
+        if not draft_path.exists():
+            return "No blog draft to publish."
+
+        title = self._derive_title(self._get_entries_text(draft_path.read_text()))
+        return await self._do_publish(title, last, user_id, engine=engine)
+
+    @staticmethod
+    def _derive_title(content: str) -> str:
+        """Best-effort title from the draft's first line."""
+        first = (content.split("\n", 1)[0] or "").strip().lstrip("#").strip()
+        return first[:80] or "Untitled Blog Post"
+
+    # ------------------------------------------------------------------
+    # SFTP folder browser + template learner
+    # ------------------------------------------------------------------
+
+    def _resolve_target_label(
+        self, raw_input: str, default_first: bool = True,
+    ) -> tuple[str | None, str | None]:
+        """
+        Pull a target label out of free-form text. Recognises:
+          - "... on <label>"
+          - "... from <label>"
+          - "... to <label>"
+        Falls back to the first configured target if nothing matches.
+
+        Returns ``(label, error)``. ``error`` is set when no target was
+        named *and* there are no configured targets.
+        """
+        m = re.search(
+            r"\b(?:on|from|to|for)\s+([\w\-.]+)\s*$",
+            raw_input.strip(), re.IGNORECASE,
+        )
+        if m:
+            return m.group(1), None
+        if not self.publisher or not self.publisher.targets:
+            return None, (
+                "No publish targets configured. "
+                "Use `setup blog publish sftp://host user pass` first."
+            )
+        if default_first:
+            return next(iter(self.publisher.targets)), None
+        return None, "Specify a target: `... on <target-label>`"
+
+    async def _list_remote_folders(
+        self,
+        raw_input: str,
+        engine: "SafestClaw",
+    ) -> str:
+        """
+        List subdirectories under the named target's remote_path so the
+        user can pick a folder without having to type a path from memory.
+
+        Also accepts an explicit base path:
+          list folders on myhost /var/www/html
+        """
+        if not self.publisher:
+            self.publisher = BlogPublisher.from_config(engine.config or {})
+
+        label, err = self._resolve_target_label(raw_input)
+        if err:
+            return err
+
+        target = self.publisher.targets.get(label) if label else None
+        if target is None:
+            return f"Unknown target: {label}"
+        if target.target_type != PublishTargetType.SFTP:
+            return f"Folder browsing is only supported for SFTP targets ({target.label} is {target.target_type.value})."
+
+        # Optional explicit path override:  list folders on host /var/www/html
+        path_m = re.search(r"\s(/[^\s]+)\s*(?:on|from)?\s*$", raw_input)
+        base_override = path_m.group(1) if path_m else None
+
+        try:
+            from safestclaw.core.sftp_browser import HAS_PARAMIKO, list_folders
+        except Exception as e:  # pragma: no cover - import guard
+            return f"SFTP browser unavailable: {e}"
+
+        if not HAS_PARAMIKO:
+            return (
+                "Folder browsing requires paramiko. "
+                "Run: pip install safestclaw[sftp]"
+            )
+
+        try:
+            entries = await asyncio.to_thread(
+                list_folders, target, base_override,
+            )
+        except Exception as e:
+            return f"Could not list folders on {target.label}: {e}"
+
+        if not entries:
+            return (
+                f"No subdirectories under "
+                f"`{base_override or target.remote_dir()}` on {target.label}."
+            )
+
+        lines = [
+            f"**Folders on {target.label}** "
+            f"(`{base_override or target.remote_dir()}`)",
+            "",
+        ]
+        for i, e in enumerate(entries, 1):
+            mtime = e.mtime.strftime("%Y-%m-%d") if e.mtime else "—"
+            lines.append(f"  {i:>2}. {e.name}/   ({mtime})")
+        lines.extend([
+            "",
+            "Set the publish subfolder with one of:",
+            f"  `setup blog publish sftp://{target.sftp_host} {target.sftp_user} <pass> "
+            f"{target.sftp_remote_path} subfolder=<name>`",
+            "Or update `sftp_subfolder` in config.yaml under publish_targets.",
+        ])
+        return "\n".join(lines)
+
+    async def _learn_template(
+        self,
+        raw_input: str,
+        engine: "SafestClaw",
+    ) -> str:
+        """
+        Fetch a sample post from the named target's remote folder,
+        detect the title and main-content regions, replace them with
+        ``{title}`` / ``{content}`` placeholders, and save the result
+        as the target's ``html_template``. Future publishes will use
+        the learned template automatically.
+        """
+        if not self.publisher:
+            self.publisher = BlogPublisher.from_config(engine.config or {})
+
+        label, err = self._resolve_target_label(raw_input)
+        if err:
+            return err
+        target = self.publisher.targets.get(label) if label else None
+        if target is None:
+            return f"Unknown target: {label}"
+        if target.target_type != PublishTargetType.SFTP:
+            return "Template learning is only supported for SFTP targets."
+
+        try:
+            from safestclaw.core.sftp_browser import (
+                HAS_PARAMIKO,
+                learn_template_from_target,
+            )
+        except Exception as e:  # pragma: no cover
+            return f"SFTP browser unavailable: {e}"
+
+        if not HAS_PARAMIKO:
+            return (
+                "Template learning requires paramiko. "
+                "Run: pip install safestclaw[sftp]"
+            )
+
+        try:
+            template, source = await asyncio.to_thread(
+                learn_template_from_target, target,
+            )
+        except Exception as e:
+            return (
+                f"Could not learn template from {target.label}: {e}\n"
+                "Tip: make sure the target's `sftp_subfolder` points at a "
+                "directory that already contains at least one .html post."
+            )
+
+        # Cache on the in-memory target so the next publish uses it.
+        target.html_template = template
+
+        # Persist back to config so it survives restarts.
+        saved = self._save_template_to_config(target, template, engine)
+
+        snippet = template[:600] + ("…" if len(template) > 600 else "")
+        return (
+            f"**Learned template from {target.label}** ({source})\n\n"
+            f"  - Cached on target.html_template for this session\n"
+            f"  - Persisted to config.yaml: {'yes' if saved else 'no (could not write)'}\n\n"
+            f"Preview:\n```html\n{snippet}\n```\n\n"
+            f"Try `preview blog to {target.label}` to see how the next post will render."
+        )
+
+    def _save_template_to_config(
+        self,
+        target: PublishTarget,
+        template: str,
+        engine: "SafestClaw",
+    ) -> bool:
+        """Write a learned template back into config.yaml's
+        publish_targets entry. Returns True on success."""
+        try:
+            import yaml
+            config_path = getattr(engine, "config_path", None)
+            if not config_path:
+                return False
+            config_path = Path(config_path)
+            if not config_path.exists():
+                return False
+            data = yaml.safe_load(config_path.read_text()) or {}
+            for entry in (data.get("publish_targets") or []):
+                if entry.get("label") == target.label:
+                    entry["html_template"] = template
+                    break
+            else:
+                return False
+            config_path.write_text(
+                yaml.dump(data, default_flow_style=False, sort_keys=False)
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Could not save learned template: {e}")
+            return False
 
     @staticmethod
     def _parse_inline_target(raw_input: str) -> PublishTarget | None:
@@ -1357,11 +2044,25 @@ class BlogAction(BaseAction):
           publish blog to joomla://mysite.com username password
           publish blog to api://mysite.com/endpoint api_key
         """
-        # Match scheme://... followed by optional tokens
+        # Strip optional trailing "subfolder=..." token before regex matching
+        # so it doesn't get captured as the remote path. The setup_publish
+        # caller pulls subfolder out separately and applies it on the target.
+        text = re.sub(
+            r"\s+(?:subfolder|folder|sub)\s*[=:]?\s*[\w\-/]+\s*$",
+            "", raw_input.strip(), flags=re.IGNORECASE,
+        )
+
+        # Match scheme://... followed by optional tokens. Accepts
+        # "publish/upload/deploy/push blog to …" (the runtime form) and
+        # "setup blog publish …" / "save blog publish …" (the
+        # configure-once form).
         m = re.search(
+            r'(?:'
             r'(?:publish|upload|deploy|push)\s+(?:blog\s+)?to\s+'
+            r'|(?:setup|save|add|store)\s+(?:blog\s+)?publish\s+(?:blog\s+)?'
+            r')'
             r'(sftp|wp|wordpress|joomla|api)://([\S]+?)(?:\s+(\S+)(?:\s+(\S+)(?:\s+(\S+))?)?)?$',
-            raw_input.strip(), re.IGNORECASE,
+            text, re.IGNORECASE,
         )
         if not m:
             return None

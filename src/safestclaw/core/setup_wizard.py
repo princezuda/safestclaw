@@ -481,8 +481,7 @@ def _prompt_fastmcp(console: Console, config_path: Path) -> None:
             "  • [bold]stdio[/bold]            — for clients that spawn\n"
             "    SafestClaw as a subprocess (Claude Desktop, etc.)\n"
             "  • [bold]sse[/bold] / [bold]streamable-http[/bold] — for HTTP-based clients\n\n"
-            "Requires: pip install fastmcp\n"
-            "(or, from a checkout: pip install -e \".[mcp]\")",
+            "Requires: pip install safestclaw[mcp]",
             title="Optional: MCP integration",
             border_style="cyan",
         )
@@ -538,8 +537,7 @@ def _prompt_fastmcp(console: Console, config_path: Path) -> None:
     console.print("[green]FastMCP plugin enabled.[/green]")
     console.print(
         "[dim]Install the optional dependency with: "
-        "[bold]pip install fastmcp[/bold] "
-        "(or, from a checkout: [bold]pip install -e \".[mcp]\"[/bold])[/dim]"
+        "[bold]pip install safestclaw[mcp][/bold][/dim]"
     )
 
 

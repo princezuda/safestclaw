@@ -186,6 +186,11 @@ _INDEX_HTML = """<!doctype html>
       <h1>Chat</h1>
       <span class="meta" id="status-text">Connecting…</span>
     </header>
+    <div id="setup-banner" style="display:none; padding:10px 16px; background:#3a2c0a; color:#f0c674; border-bottom:1px solid #6a5328; font-size:13px;">
+      🛠️  Looks like SafestClaw isn't set up yet.
+      Type <strong>setup</strong> below to start the walkthrough,
+      or <strong>skip</strong> to defer.
+    </div>
     <div id="log">
       <div class="empty" id="empty">
         Type a command below or pick an action on the left.
@@ -246,6 +251,8 @@ _INDEX_HTML = """<!doctype html>
         dot.classList.remove("bad");
         statusText.textContent = j.name + " · " +
           j.actions + " actions, " + j.channels + " channels";
+        const banner = document.getElementById("setup-banner");
+        if (banner) banner.style.display = j.needs_setup ? "block" : "none";
         return true;
       }
       throw new Error("status " + r.status);
@@ -394,11 +401,18 @@ class WebChannel(BaseChannel):
         async def health(request: Request) -> Any:
             _check_auth(request)
             sc = self.engine.config.get("safestclaw", {}) or {}
+            needs_setup = False
+            if hasattr(self.engine, "chat_setup"):
+                try:
+                    needs_setup = self.engine.chat_setup.needs_setup()
+                except Exception:
+                    needs_setup = False
             return {
                 "status": "ok",
                 "name": sc.get("name", "SafestClaw"),
                 "actions": len(self.engine.actions),
                 "channels": len(self.engine.channels),
+                "needs_setup": needs_setup,
             }
 
         @app.get("/api/actions")
