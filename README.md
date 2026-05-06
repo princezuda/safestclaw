@@ -159,7 +159,7 @@ Blog publishing (WordPress, Joomla, SFTP) | ✅ | ❌ (requires plugins) |
 * **Loopback only** — `WebChannel` refuses non-127.0.0.1 binds at construction
 * **Optional auth** — Bearer token via `channels.web.auth_token`
 * **JSON API** — `/api/health`, `/api/actions`, `/api/help`, `/api/message`, `/api/history`
-* Run standalone: `safestclaw web` — or alongside other channels: `safestclaw run --web`
+* Run standalone: `safestclaw web` — or alongside other channels: `safestclaw web --webhook --telegram --cli`
 
 ### 🛡️ Security Scanners (no AI)
 * **bandit, pip-audit, safety, semgrep, trivy, detect-secrets, gitleaks** — all optional, all auto-detected
@@ -562,7 +562,7 @@ safestclaw webhook --port 8765
 safestclaw web                       # http://127.0.0.1:8771/
 safestclaw web --port 9000           # custom port
 safestclaw web --token "secret"      # require Bearer/X-SafestClaw-Token
-safestclaw run --web                 # run alongside CLI / webhook / Telegram
+safestclaw web --cli --webhook --telegram   # run alongside CLI / webhook / Telegram
 
 # Model Context Protocol (FastMCP — every action as an MCP tool)
 safestclaw mcp                       # stdio (Claude Desktop, IDE clients)

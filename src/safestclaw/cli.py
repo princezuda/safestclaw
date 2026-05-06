@@ -3,7 +3,7 @@ SafestClaw CLI - Main entry point.
 
 Usage:
     safestclaw              # Start interactive CLI
-    safestclaw run          # Start with all configured channels
+    safestclaw web          # Start the localhost web UI (+ optional channels)
     safestclaw webhook      # Start webhook server only
     safestclaw summarize    # Summarize URL or text
     safestclaw crawl        # Crawl a URL
@@ -348,71 +348,6 @@ async def run_cli(config_path: Path | None = None) -> None:
     # Add CLI channel
     cli_channel = CLIChannel(engine)
     engine.register_channel("cli", cli_channel)
-
-    await engine.start()
-
-
-@app.command()
-def run(
-    config: Path | None = typer.Option(None, "--config", "-c"),
-    webhook: bool = typer.Option(False, "--webhook", help="Enable webhook server"),
-    telegram: bool = typer.Option(False, "--telegram", help="Enable Telegram bot"),
-    web: bool = typer.Option(False, "--web", help="Enable localhost web UI"),
-    verbose: bool = typer.Option(False, "--verbose"),
-):
-    """Start SafestClaw with configured channels."""
-    setup_logging(verbose)
-    try:
-        asyncio.run(_run_all(config, webhook, telegram, web))
-    except KeyboardInterrupt:
-        pass
-    finally:
-        import os
-        os._exit(0)
-
-
-async def _run_all(
-    config_path: Path | None,
-    enable_webhook: bool,
-    enable_telegram: bool,
-    enable_web: bool = False,
-) -> None:
-    """Run all configured channels."""
-    engine = create_engine(config_path)
-
-    # Add CLI channel
-    cli_channel = CLIChannel(engine)
-    engine.register_channel("cli", cli_channel)
-
-    # Add webhook if enabled
-    if enable_webhook:
-        from safestclaw.triggers.webhook import WebhookServer
-        webhook_server = WebhookServer()
-        engine.register_channel("webhook", webhook_server)
-
-    # Add Telegram if enabled
-    if enable_telegram:
-        token = engine.config.get("telegram", {}).get("token")
-        if token:
-            from safestclaw.channels.telegram import TelegramChannel
-            telegram_channel = TelegramChannel(engine, token)
-            engine.register_channel("telegram", telegram_channel)
-        else:
-            console.print("[yellow]Telegram token not configured[/yellow]")
-
-    # Add localhost web UI if enabled (flag or config)
-    web_cfg = (engine.config.get("channels") or {}).get("web") or {}
-    if enable_web or web_cfg.get("enabled"):
-        from safestclaw.channels.web import WebChannel
-        try:
-            web_channel = WebChannel.from_config(engine, web_cfg)
-            engine.register_channel("web", web_channel)
-            console.print(
-                f"[green]Web UI:[/green] "
-                f"http://{web_channel.host}:{web_channel.port}"
-            )
-        except (ImportError, ValueError) as e:
-            console.print(f"[red]Could not start web UI: {e}[/red]")
 
     await engine.start()
 
@@ -1083,15 +1018,19 @@ def web(
                               help="Bind host (loopback only)"),
     port: int = typer.Option(8771, "--port", "-p", help="Port"),
     token: str = typer.Option("", "--token", help="Optional auth token"),
+    cli: bool = typer.Option(False, "--cli", help="Also start the interactive CLI channel"),
+    webhook: bool = typer.Option(False, "--webhook", help="Also start the webhook server"),
+    telegram: bool = typer.Option(False, "--telegram", help="Also start the Telegram bot"),
     config: Path | None = typer.Option(None, "--config", "-c"),
     verbose: bool = typer.Option(False, "--verbose"),
 ):
     """
-    Start the localhost web UI.
+    Start the localhost web UI (and optionally other channels).
 
     Exposes the entire SafestClaw engine — every action, plugin, and
     command — through a tiny chat interface plus a JSON API at
-    http://127.0.0.1:8771.
+    http://127.0.0.1:8771. Add --webhook/--telegram/--cli to run those
+    channels in the same process.
     """
     setup_logging(verbose)
 
@@ -1119,8 +1058,29 @@ def web(
             f"http://{channel.host}:{channel.port}"
             + ("  (token required)" if channel.auth_token else "")
         )
+
+        if cli:
+            engine.register_channel("cli", CLIChannel(engine))
+
+        if webhook:
+            from safestclaw.triggers.webhook import WebhookServer
+            engine.register_channel("webhook", WebhookServer())
+
+        if telegram:
+            token_cfg = engine.config.get("telegram", {}).get("token")
+            if token_cfg:
+                from safestclaw.channels.telegram import TelegramChannel
+                engine.register_channel(
+                    "telegram", TelegramChannel(engine, token_cfg)
+                )
+            else:
+                console.print("[yellow]Telegram token not configured[/yellow]")
+
         try:
-            await channel.start()
+            if cli or webhook or telegram:
+                await engine.start()
+            else:
+                await channel.start()
         except KeyboardInterrupt:
             await channel.stop()
 
@@ -1128,6 +1088,9 @@ def web(
         asyncio.run(_run())
     except KeyboardInterrupt:
         pass
+    finally:
+        import os
+        os._exit(0)
 
 
 @app.command()

@@ -64,6 +64,105 @@ except ImportError:  # pragma: no cover - already a core dep, but be defensive
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Per-action UI metadata. Tells the front-end how clicking an action button
+# should behave:
+#
+#   "immediate" → run the command directly, no input typing required
+#   "config"    → first click asks for a value, saves it to localStorage,
+#                 every later click runs immediately with the saved value
+#   "explain"   → show a short explainer + a single button to run / set up
+#
+# Actions not listed here fall through to the default behaviour: prefill
+# the chat input with the first example so the user can edit + submit.
+# ─────────────────────────────────────────────────────────────────────────────
+
+ACTION_UI: dict[str, dict[str, Any]] = {
+    "weather": {
+        "type": "config",
+        "description": "Current weather. Free, no API key.",
+        "key": "weather_location",
+        "label": "Default location",
+        "placeholder": "e.g. New York or London",
+        "template": "weather {value}",
+    },
+    "news": {
+        "type": "config",
+        "description": "Latest headlines from RSS feeds.",
+        "key": "news_category",
+        "label": "Default category (blank = all)",
+        "placeholder": "tech, world, science…",
+        "template": "news {value}",
+        "allow_empty": True,
+    },
+    "briefing": {
+        "type": "immediate",
+        "description": "Daily briefing: weather + news + calendar.",
+        "run": "briefing",
+    },
+    "calendar": {
+        "type": "immediate",
+        "description": "Today's events from your calendar.",
+        "run": "calendar today",
+    },
+    "help": {"type": "immediate", "run": "help"},
+    "flow": {"type": "immediate", "run": "flow"},
+    "style": {"type": "immediate", "run": "style"},
+    "mcp": {
+        "type": "explain",
+        "description": (
+            "Model Context Protocol — expose every SafestClaw action as a "
+            "tool that Claude Desktop and IDE clients can call. Configure "
+            "with `safestclaw setup` or edit config.yaml."
+        ),
+        "run": "help mcp",
+        "run_label": "Show MCP help",
+    },
+    "llm_setup": {
+        "type": "explain",
+        "description": (
+            "Install or connect a language model — local Ollama or a cloud "
+            "API key. Optional: every deterministic feature works without one."
+        ),
+        "run": "ai status",
+        "run_label": "Show AI status",
+    },
+    "security": {
+        "type": "explain",
+        "description": (
+            "Deterministic security scanners (bandit, pip-audit, semgrep, "
+            "trivy, gitleaks, …). No AI required."
+        ),
+        "run": "security tools",
+        "run_label": "Show installed scanners",
+    },
+    "autoblog": {
+        "type": "explain",
+        "description": "Cron-based blog publishing from RSS feeds.",
+        "run": "autoblog list",
+        "run_label": "List schedules",
+    },
+    "blog": {
+        "type": "explain",
+        "description": "Write, list, and publish blog posts (no LLM required).",
+        "run": "blog help",
+        "run_label": "Show blog commands",
+    },
+    "email": {
+        "type": "explain",
+        "description": "Read, search, and compose email (IMAP / SMTP).",
+        "run": "email help",
+        "run_label": "Show email commands",
+    },
+    "research": {
+        "type": "explain",
+        "description": "Multi-source research with selectable sources.",
+        "run": "research help",
+        "run_label": "Show research commands",
+    },
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # HTML / CSS / JS — single inline page, no external assets, no CDNs.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -168,6 +267,40 @@ _INDEX_HTML = """<!doctype html>
   .pill { display: inline-block; padding: 1px 6px; border-radius: 999px;
           background: #21262d; color: var(--muted); font-size: 11px; }
   .empty { color: var(--muted); text-align: center; margin-top: 20vh; }
+  .card {
+    align-self: flex-start; max-width: 80%;
+    background: var(--asst-bg); border: 1px solid var(--panel-border);
+    border-radius: 10px; padding: 10px 12px;
+  }
+  .card .title { font-weight: 600; margin-bottom: 4px; }
+  .card .desc  { color: var(--muted); margin-bottom: 8px; }
+  .card .saved { color: var(--good); font-size: 12px; margin-bottom: 8px; }
+  .card .row   { display: flex; gap: 6px; flex-wrap: wrap; }
+  .card input  {
+    flex: 1; min-width: 160px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--panel-border); border-radius: 6px;
+    padding: 6px 8px; font: inherit;
+  }
+  .card button {
+    background: var(--accent-bg); color: white; border: 0; border-radius: 6px;
+    padding: 6px 12px; cursor: pointer; font: inherit;
+  }
+  .card button.secondary {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--panel-border);
+  }
+  .card button:hover { filter: brightness(1.1); }
+  aside .footer {
+    margin-top: 14px; padding-top: 10px;
+    border-top: 1px solid var(--panel-border);
+  }
+  aside .footer button {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--panel-border); border-radius: 6px;
+    padding: 5px 8px; cursor: pointer; font: inherit; font-size: 12px;
+    width: 100%;
+  }
+  aside .footer button:hover { color: var(--accent); border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -179,6 +312,9 @@ _INDEX_HTML = """<!doctype html>
     <div class="actions" id="actions"></div>
     <h2>Help</h2>
     <button class="action" id="help-btn">Show help</button>
+    <div class="footer">
+      <button id="reset-prefs">Reset saved defaults</button>
+    </div>
   </aside>
   <main>
     <header>
@@ -263,6 +399,139 @@ _INDEX_HTML = """<!doctype html>
     }
   }
 
+  const PREF_PREFIX = "safestclaw-pref-";
+  function getPref(key) { return window.localStorage.getItem(PREF_PREFIX + key); }
+  function setPref(key, val) { window.localStorage.setItem(PREF_PREFIX + key, val); }
+  function clearPrefs() {
+    Object.keys(window.localStorage)
+      .filter(k => k.startsWith(PREF_PREFIX))
+      .forEach(k => window.localStorage.removeItem(k));
+  }
+
+  function showCard(buildBody) {
+    if (empty) empty.remove();
+    const card = document.createElement("div");
+    card.className = "card";
+    buildBody(card, () => card.remove());
+    log.appendChild(card);
+    log.scrollTop = log.scrollHeight;
+    return card;
+  }
+
+  function explainCard(action) {
+    const ui = action.ui || {};
+    showCard((card, close) => {
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = action.name;
+      const desc = document.createElement("div");
+      desc.className = "desc";
+      desc.textContent = ui.description || "";
+      const row = document.createElement("div");
+      row.className = "row";
+      const run = document.createElement("button");
+      run.textContent = ui.run_label || "Run it";
+      run.addEventListener("click", () => {
+        close();
+        send(ui.run || action.name);
+      });
+      const cancel = document.createElement("button");
+      cancel.className = "secondary";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", close);
+      row.appendChild(run);
+      row.appendChild(cancel);
+      card.appendChild(title);
+      if (ui.description) card.appendChild(desc);
+      card.appendChild(row);
+    });
+  }
+
+  function buildConfigCommand(ui, value) {
+    const tpl = ui.template || (ui.run || "");
+    return tpl.replace("{value}", value).trim();
+  }
+
+  function configCard(action, opts) {
+    opts = opts || {};
+    const ui = action.ui || {};
+    showCard((card, close) => {
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = action.name;
+      const desc = document.createElement("div");
+      desc.className = "desc";
+      desc.textContent = ui.description || "";
+
+      const row = document.createElement("div");
+      row.className = "row";
+      const field = document.createElement("input");
+      field.type = "text";
+      field.placeholder = ui.placeholder || "";
+      field.value = opts.initial || "";
+      field.setAttribute("aria-label", ui.label || action.name);
+      const save = document.createElement("button");
+      save.textContent = "Save & run";
+      const cancel = document.createElement("button");
+      cancel.className = "secondary";
+      cancel.textContent = "Cancel";
+
+      const submit = () => {
+        const v = field.value.trim();
+        if (!v && !ui.allow_empty) { field.focus(); return; }
+        setPref(ui.key, v);
+        close();
+        send(buildConfigCommand(ui, v));
+      };
+      save.addEventListener("click", submit);
+      cancel.addEventListener("click", close);
+      field.addEventListener("keydown", e => {
+        if (e.key === "Enter") { e.preventDefault(); submit(); }
+      });
+
+      row.appendChild(field);
+      row.appendChild(save);
+      row.appendChild(cancel);
+
+      const labelEl = document.createElement("div");
+      labelEl.className = "desc";
+      labelEl.textContent = ui.label || "";
+
+      card.appendChild(title);
+      if (ui.description) card.appendChild(desc);
+      if (ui.label) card.appendChild(labelEl);
+      card.appendChild(row);
+      setTimeout(() => field.focus(), 0);
+    });
+  }
+
+  function handleActionClick(action) {
+    const ui = action.ui || {};
+    const type = ui.type || "input";
+
+    if (type === "immediate") {
+      send(ui.run || action.name);
+      return;
+    }
+    if (type === "explain") {
+      explainCard(action);
+      return;
+    }
+    if (type === "config") {
+      const saved = getPref(ui.key);
+      if (saved !== null) {
+        send(buildConfigCommand(ui, saved));
+        return;
+      }
+      configCard(action, { initial: "" });
+      return;
+    }
+    // Fallback: prefill the input so the user can edit and submit.
+    const example = (action.examples && action.examples[0]) || action.name;
+    input.value = example;
+    input.focus();
+  }
+
   async function loadActions() {
     try {
       const r = await fetch("/api/actions", { headers: headers() });
@@ -272,14 +541,21 @@ _INDEX_HTML = """<!doctype html>
       (j.actions || []).forEach(a => {
         const b = document.createElement("button");
         b.className = "action";
-        b.title = a.examples && a.examples[0] ? a.examples[0] : a.name;
-        const example = (a.examples && a.examples[0]) || a.name;
+        const ui = a.ui || {};
+        const hint = ui.description
+          || (a.examples && a.examples[0])
+          || a.name;
+        b.title = hint;
+        const saved = ui.type === "config" ? getPref(ui.key) : null;
+        let sub;
+        if (saved !== null) {
+          sub = saved ? ("Saved: " + saved) : "Saved: (all)";
+        } else {
+          sub = ui.description || (a.examples && a.examples[0]) || a.name;
+        }
         b.innerHTML = "<strong>" + escapeHTML(a.name) + "</strong>" +
-                      "<small>" + escapeHTML(example) + "</small>";
-        b.addEventListener("click", () => {
-          input.value = example;
-          input.focus();
-        });
+                      "<small>" + escapeHTML(sub) + "</small>";
+        b.addEventListener("click", () => handleActionClick(a));
         actionsList.appendChild(b);
       });
     } catch (e) {
@@ -317,6 +593,15 @@ _INDEX_HTML = """<!doctype html>
     if (v) send(v);
   });
   helpBtn.addEventListener("click", () => send("help"));
+
+  const resetBtn = document.getElementById("reset-prefs");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      clearPrefs();
+      loadActions();
+      addMessage("Saved defaults cleared.", "asst");
+    });
+  }
 
   ping().then(ok => { if (ok) loadActions(); });
   setInterval(ping, 30000);
@@ -426,6 +711,7 @@ class WebChannel(BaseChannel):
                     "name": name,
                     "examples": list(pat.examples) if pat else [],
                     "keywords": list(pat.keywords) if pat else [],
+                    "ui": ACTION_UI.get(name, {"type": "input"}),
                 })
             return {"actions": payload}
 

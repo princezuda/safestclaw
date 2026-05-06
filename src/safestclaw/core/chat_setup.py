@@ -102,8 +102,16 @@ class ChatSetup:
         to normal command routing (only happens after the user picks
         "skip" or finishes the wizard).
         """
+        from safestclaw.core.word_numbers import normalize_number_word
         text = (text or "").strip()
         lowered = text.lower()
+        # Accept spelled-out numbers ("one"/"two"/...) for numbered menus.
+        first_token = lowered.split(" ", 1)[0] if lowered else ""
+        normalized_first = normalize_number_word(first_token)
+        if normalized_first != first_token:
+            rest = lowered[len(first_token):]
+            lowered = normalized_first + rest
+            text = normalized_first + text[len(first_token):]
         session = self._sessions.setdefault(user_id, ChatSetupSession())
 
         # Universal skip — bail out and mark setup done so we stop
