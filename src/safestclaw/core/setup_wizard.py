@@ -22,6 +22,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.table import Table
 
+from safestclaw.core.word_numbers import WordIntPrompt, WordPrompt
 from safestclaw.core.llm_installer import (
     CLOUD_PROVIDERS,
     LOCAL_MODELS,
@@ -171,7 +172,7 @@ def _choose_mode(console: Console) -> int:
     console.print()
     console.print(table)
     console.print()
-    return IntPrompt.ask(
+    return WordIntPrompt.ask(
         "[bold]Choose a setup mode[/bold]",
         choices=["1", "2", "3", "4"],
         default=1,
@@ -200,7 +201,7 @@ def _prompt_cloud_provider(console: Console) -> tuple[str, str] | None:
     console.print()
 
     choices = [str(i) for i in range(1, len(options) + 1)] + ["s"]
-    raw = Prompt.ask(
+    raw = WordPrompt.ask(
         "[bold]Pick a provider[/bold] (or 's' to skip)",
         choices=choices,
         default="1",
@@ -250,7 +251,7 @@ def _prompt_local_model(console: Console) -> str:
     console.print()
     console.print(table)
     console.print()
-    raw = IntPrompt.ask(
+    raw = WordIntPrompt.ask(
         "[bold]Pick a local model[/bold]",
         choices=[str(i) for i in range(1, len(presets) + 1)],
         default=2,  # "default" preset
@@ -435,7 +436,7 @@ def _prompt_web_ui(console: Console, config_path: Path) -> None:
     )
     console.print(
         "[dim]Run [bold]safestclaw web[/bold] to start it standalone, or "
-        "[bold]safestclaw run --web[/bold] alongside other channels.[/dim]"
+        "[bold]safestclaw web --cli --webhook --telegram[/bold] alongside other channels.[/dim]"
     )
 
 
