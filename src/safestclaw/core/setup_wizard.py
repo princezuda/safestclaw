@@ -22,7 +22,6 @@ from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.table import Table
 
-from safestclaw.core.word_numbers import WordIntPrompt, WordPrompt
 from safestclaw.core.llm_installer import (
     CLOUD_PROVIDERS,
     LOCAL_MODELS,
@@ -32,6 +31,7 @@ from safestclaw.core.llm_installer import (
     setup_local,
     setup_with_key,
 )
+from safestclaw.core.word_numbers import WordIntPrompt, WordPrompt
 
 DEFAULT_CONFIG_TEMPLATE = """# SafestClaw Configuration
 
