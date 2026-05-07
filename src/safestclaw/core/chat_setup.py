@@ -157,11 +157,11 @@ class ChatSetup:
     def _welcome_text(self) -> str:
         return (
             "Welcome to SafestClaw — privacy-first personal automation.\n\n"
-            "Everything works fully offline (summaries, news, blog, "
-            "calendar, …). You can optionally add an LLM for blogging, "
-            "research, and code generation.\n\n"
+            "The core features (summaries, news, blog, calendar, …) need no "
+            "API keys and no fees. You can optionally add an LLM for "
+            "blogging, research, and code generation.\n\n"
             "How would you like to set up?\n\n"
-            "  **1**  Local-only — no LLM, free, private. Recommended.\n"
+            "  **1**  Local-only — no LLM, no API keys, no fees. Recommended.\n"
             "  **2**  Cloud LLM — Anthropic / OpenAI / Google / Groq (API key needed)\n"
             "  **3**  Hybrid — local Ollama + cloud, per-task routing\n"
             "  **4**  Skip — I'll edit config.yaml myself\n\n"
