@@ -229,7 +229,8 @@ class TelegramChannel(BaseChannel):
         "  `blog write news ...` — assemble a post (no LLM)\n"
         "  `research <topic>`    — wiki + web extracts\n"
         "  `style learn <text>`  — teach me your writing voice\n\n"
-        "Type /help any time, or `setup ai <key>` later if you change your mind."
+        "Or just ask me anything you want automated and I'll explain — "
+        "or `setup ai <key>` later if you change your mind."
     )
 
     # ------------------------------------------------------------------
@@ -305,7 +306,7 @@ class TelegramChannel(BaseChannel):
     def _chat_reply(self, text: str, user_id: int) -> str:
         """Build a chat-friendly reply for an unparsed message."""
         if self._GREETING.match(text):
-            return "Hey 👋 — what can I help you automate today? (Try /help.)"
+            return "Hey 👋 — what would you like me to automate?"
         if self._THANKS.match(text):
             return "Anytime."
 
@@ -327,9 +328,9 @@ class TelegramChannel(BaseChannel):
         if user_id not in self._chat_oriented:
             self._chat_oriented.add(user_id)
             return (
-                "I'm here. I'm built to automate things — summaries, news, "
-                "reminders, blogs, briefings, research — but happy to chat. "
-                "Type /help for the menu, or just ask."
+                "Hey — I'm here to help with automation. Ask about anything "
+                "you want automated and I can help with it, or you can read "
+                "the raw documentation with /help."
             )
         return "I'm listening — what would you like me to do?"
 
@@ -348,8 +349,8 @@ class TelegramChannel(BaseChannel):
             return self._ONBOARDING_COMMANDS_REPLY
         if t in ("skip", "later", "cancel", "no", "nope"):
             return (
-                "OK — skipped. Type /help to see what I can do, or "
-                "`setup ai <your-key>` any time to add an LLM."
+                "OK — skipped. Just ask me anything you want automated and "
+                "I'll help, or `setup ai <your-key>` any time to add an LLM."
             )
         return None
 
@@ -452,9 +453,10 @@ class TelegramChannel(BaseChannel):
             response = "(no response)"
 
         # Conversational fallback: when the engine couldn't parse the
-        # message as a command (and no LLM-based NLU rescued it), turn
-        # the generic "I didn't understand…" into a chat-friendly reply.
-        if response.startswith("I didn't understand"):
+        # message as a command (and no LLM-based NLU rescued it), swap
+        # the generic dead-end reply for a chat-friendly response that
+        # respects the per-user "don't keep nagging" rules.
+        if response.startswith(("I didn't quite catch that", "I didn't understand")):
             response = self._chat_reply(text, user_id)
 
         # Warn when no allowlist is configured (bot is open to anyone)

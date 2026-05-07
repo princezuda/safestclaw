@@ -317,7 +317,11 @@ class SafestClaw:
                 ttl_seconds=120,  # Remember for 2 minutes
             )
 
-        return "I didn't understand that command. Try 'help' to see what I can do."
+        return (
+            "I didn't quite catch that. Tell me what you'd like to automate — "
+            "summaries, news, reminders, weather, calendar, blogs, briefings, "
+            "research — and I'll take it from there. (Or `/help` for the raw docs.)"
+        )
 
     async def _handle_chain(
         self,
