@@ -60,6 +60,12 @@ class TelegramChannel(BaseChannel):
         self.app: Application | None = None
         self._stop_event: asyncio.Event | None = None
 
+        # Lightweight per-Telegram-user onboarding: ask "LLM, or learn my
+        # commands?" once per user. Tracked in-memory only — a restart
+        # re-engages the welcome, which is acceptable for the simple flow.
+        self._welcomed: set[int] = set()
+        self._awaiting_choice: set[int] = set()
+
     async def start(self) -> None:
         """Start the Telegram bot."""
         self.app = Application.builder().token(self.token).build()
@@ -182,6 +188,63 @@ class TelegramChannel(BaseChannel):
             return True
         return user_id in self.allowed_users
 
+    # ------------------------------------------------------------------
+    # Per-user onboarding (LLM or learn commands?)
+    # ------------------------------------------------------------------
+
+    _ONBOARDING_PROMPT = (
+        "👋 Welcome to SafestClaw! Two ways to use me — pick one:\n\n"
+        "  *1*  Use an LLM (Claude, GPT, Gemini, Groq, or local Ollama)\n"
+        "       Best for blogging, research, and code generation.\n\n"
+        "  *2*  Learn my commands (no LLM, free, fully offline)\n"
+        "       Summaries, news, crawl, weather, calendar, briefings, blog.\n\n"
+        "Reply *1* or *2*. (Type `skip` to do this later.)"
+    )
+
+    _ONBOARDING_LLM_REPLY = (
+        "Great — to plug in an LLM, paste your API key right here:\n\n"
+        "  `setup ai sk-ant-...`   — Anthropic (Claude)\n"
+        "  `setup ai sk-...`       — OpenAI (GPT)\n"
+        "  `setup ai AI...`        — Google Gemini\n"
+        "  `setup ai gsk_...`      — Groq\n\n"
+        "Or for a free local model: `setup ai local` (installs Ollama).\n\n"
+        "Need a key? https://console.anthropic.com/settings/keys"
+    )
+
+    _ONBOARDING_COMMANDS_REPLY = (
+        "Nice — here's what I can do without any LLM:\n\n"
+        "  `summarize <url>`     — extractive summary of a page\n"
+        "  `news` / `news tech`  — RSS headlines\n"
+        "  `crawl <url>`         — extract links from a page\n"
+        "  `weather <city>`      — current conditions\n"
+        "  `briefing`            — your daily digest\n"
+        "  `calendar today`      — events from your .ics\n"
+        "  `blog write news ...` — assemble a post (no LLM)\n"
+        "  `research <topic>`    — wiki + web extracts\n"
+        "  `style learn <text>`  — teach me your writing voice\n\n"
+        "Type /help any time, or `setup ai <key>` later if you change your mind."
+    )
+
+    def _parse_onboarding_choice(self, text: str) -> str | None:
+        """Map a user reply to an onboarding outcome.
+
+        Returns the reply text, or ``None`` if the message doesn't look
+        like a choice (caller should re-prompt).
+        """
+        t = (text or "").strip().lower()
+        if not t:
+            return None
+        if t.startswith(("1", "llm", "ai", "use llm", "use ai", "yes")):
+            return self._ONBOARDING_LLM_REPLY
+        if t.startswith(("2", "command", "learn", "no llm", "offline")):
+            return self._ONBOARDING_COMMANDS_REPLY
+        if t in ("skip", "later", "cancel", "no", "nope"):
+            return (
+                "OK — skipped. Type /help to see what I can do, or "
+                "`setup ai <your-key>` any time to add an LLM."
+            )
+        return None
+
     async def _cmd_start(
         self,
         update: "Update",
@@ -197,12 +260,11 @@ class TelegramChannel(BaseChannel):
             )
             return
 
-        await self._safe_reply(
-            update.message,
-            "Welcome to SafestClaw! 🐾\n\n"
-            "I'm your privacy-first automation assistant.\n"
-            "Type /help to see what I can do.",
-        )
+        # /start always (re-)launches the simple wizard.
+        uid = update.effective_user.id
+        self._welcomed.add(uid)
+        self._awaiting_choice.add(uid)
+        await self._safe_reply(update.message, self._ONBOARDING_PROMPT)
 
     async def _cmd_help(
         self,
@@ -239,6 +301,28 @@ class TelegramChannel(BaseChannel):
             await self._safe_reply(
                 update.message, "Sorry, you're not authorized to use this bot."
             )
+            return
+
+        # \u2500\u2500 Onboarding intercept \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        # First message from a user \u2192 show the simple wizard.
+        if user_id not in self._welcomed:
+            self._welcomed.add(user_id)
+            self._awaiting_choice.add(user_id)
+            await self._safe_reply(update.message, self._ONBOARDING_PROMPT)
+            return
+
+        # User is mid-wizard \u2192 parse their answer (or re-prompt).
+        if user_id in self._awaiting_choice:
+            reply = self._parse_onboarding_choice(text)
+            if reply is None:
+                await self._safe_reply(
+                    update.message,
+                    "I didn't catch that \u2014 reply *1* (LLM) or *2* (commands), "
+                    "or `skip`.",
+                )
+                return
+            self._awaiting_choice.discard(user_id)
+            await self._safe_reply(update.message, reply)
             return
 
         # Route through the engine (rule-based parser \u2192 action \u2192 optional
