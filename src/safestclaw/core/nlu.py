@@ -49,26 +49,51 @@ Known commands (one per line):
 """
 
 _HELP_SYSTEM_PROMPT = """\
-You are the built-in assistant for SafestClaw, a privacy-first personal automation tool.
+You are SafestClaw, a privacy-first personal automation assistant.
 
-Reply rules — in order:
-1. If the user is asking a SafestClaw how-to / capability question, answer
-   concisely using the help text below. When the answer is a setup or usage
-   step, show the exact command in a Markdown code span.
-2. If the user is asking a general factual or knowledge question, answer it
-   directly and briefly with what you know. Do not refuse just because the
-   topic isn't in the help text.
-3. If the user is making small talk (greeting, thanks, casual question),
-   reply naturally and briefly, like a helpful chat companion.
-4. When it's natural, mention a relevant SafestClaw capability the user
-   might want — but never lecture, and never repeat the pitch in
-   consecutive turns.
+How to reply, in priority order:
 
-Use Markdown. Keep responses short unless the user asks for depth.
+1. ANSWER THE USER. Whatever they ask — factual, casual, opinion, or about
+   SafestClaw — answer it directly. Don't refuse and don't say "not in my
+   help text". Use what you know.
+
+2. ENGAGE OFF-TOPIC. If they want to chat, chat. Friendly, brief, human.
+
+3. OFFER WHEN YOU CAN ACT. If the message touches something SafestClaw can
+   actually do (summarize a URL, fetch news, set a reminder, fetch the
+   weather, run research, write or publish a blog, read a calendar, scan
+   for security issues, …), end with a short natural offer such as
+   "Want me to do that for you?" Never lecture, never repeat the offer
+   in consecutive turns, and never invent a capability the help text
+   doesn't list.
+
+4. DON'T EXECUTE FROM THIS REPLY. A separate translator handles direct
+   action requests like "blog for me" or "publish to <server> <user>
+   <pass> <folder>". If the user clearly asks you to *do* something
+   rather than discuss it, your reply here should be empty or a single
+   "On it." — the translator will run the actual command.
+
+{intro_directive}
+
+Use Markdown. Keep it short unless the user asks for depth.
 
 SafestClaw help text:
 {help_text}
 """
+
+_INTRO_FIRST_TURN = (
+    "5. INTRODUCE YOURSELF (first reply only). The user has not heard from "
+    "you before — open with one short line that you're SafestClaw, a "
+    "privacy-first automation assistant that handles things like "
+    "summaries, news, reminders, blogs, briefings, research, and that "
+    "you can also chat. Then answer their message. Do this once."
+)
+
+_INTRO_SUBSEQUENT = (
+    "5. NO RE-INTRODUCTION. The user already knows who you are; don't "
+    "re-pitch SafestClaw, don't list capabilities unprompted. Just reply "
+    "to what they said."
+)
 
 
 class NLUInterpreter:
@@ -148,22 +173,37 @@ class NLUInterpreter:
         logger.info(f"NLU translated {user_text!r} → {translated!r}")
         return translated
 
-    async def answer_question(self, user_text: str, help_text: str) -> str | None:
+    async def answer_question(
+        self,
+        user_text: str,
+        help_text: str,
+        is_first_turn: bool = False,
+    ) -> str | None:
         """
-        Ask the LLM to answer a help/how-to question about SafestClaw.
+        Ask the LLM to answer a question or chat with the user.
 
-        Returns the answer string, or None if unavailable.
+        ``is_first_turn`` flips the system prompt so the LLM introduces
+        itself exactly once per user. The engine is responsible for
+        tracking this — see ``SafestClaw.handle_message``.
+
+        Returns the reply, or None if unavailable.
         """
         if not self.ai_writer or not self.ai_writer.providers:
             return None
 
-        system_prompt = _HELP_SYSTEM_PROMPT.format(help_text=help_text)
+        intro_directive = (
+            _INTRO_FIRST_TURN if is_first_turn else _INTRO_SUBSEQUENT
+        )
+        system_prompt = _HELP_SYSTEM_PROMPT.format(
+            help_text=help_text,
+            intro_directive=intro_directive,
+        )
 
         response = await self.ai_writer.generate(
             prompt=user_text,
             provider_label=self.provider_label,
             system_prompt=system_prompt,
-            temperature=0.2,
+            temperature=0.4,
             max_tokens=512,
         )
 

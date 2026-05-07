@@ -293,8 +293,18 @@ class SafestClaw:
 
         # ── NLU help/question answering ───────────────────────────────────────
         if self.nlu:
-            answer = await self.nlu.answer_question(text, self.get_help())
+            # Show the "I'm SafestClaw, I can …" intro exactly once per user.
+            # Persisted in memory so the directive survives restarts.
+            intro_key = f"_nlu_introduced:{user_id}" if user_id else None
+            is_first_turn = False
+            if intro_key:
+                is_first_turn = not bool(await self.memory.get(intro_key))
+            answer = await self.nlu.answer_question(
+                text, self.get_help(), is_first_turn=is_first_turn,
+            )
             if answer:
+                if intro_key and is_first_turn:
+                    await self.memory.set(intro_key, "1")
                 return answer
 
         # Track failed command for potential auto-learning
