@@ -3,7 +3,8 @@ SafestClaw CLI - Main entry point.
 
 Usage:
     safestclaw              # Start interactive CLI
-    safestclaw web          # Start the localhost web UI (+ optional channels)
+    safestclaw web          # Start the localhost web UI
+    safestclaw telegram     # Start the Telegram bot
     safestclaw webhook      # Start webhook server only
     safestclaw summarize    # Summarize URL or text
     safestclaw crawl        # Crawl a URL
@@ -63,6 +64,54 @@ def setup_logging(verbose: bool = False) -> None:
         format="%(message)s",
         handlers=[RichHandler(rich_tracebacks=True)],
     )
+
+
+def _register_telegram_from_config(
+    engine: SafestClaw,
+    *,
+    required: bool = False,
+) -> bool:
+    """Register the Telegram channel on the engine when configured.
+
+    Reads ``channels.telegram`` from the engine config. Returns True when
+    the channel was registered. When ``required`` is True, missing token or
+    library prints a red error and exits; otherwise these conditions print
+    a yellow note and return False.
+    """
+    tg_cfg = (engine.config.get("channels") or {}).get("telegram") or {}
+    enabled = tg_cfg.get("enabled", False)
+    token = (tg_cfg.get("token") or "").strip()
+
+    if not required and not enabled:
+        return False
+
+    if not token:
+        msg = (
+            "Telegram token not configured. Run [bold]safestclaw setup[/bold] "
+            "or from the CLI: [bold]setup telegram <token-from-@BotFather>[/bold]."
+        )
+        if required:
+            console.print(f"[red]{msg}[/red]")
+            raise typer.Exit(1)
+        console.print(f"[yellow]{msg}[/yellow]")
+        return False
+
+    try:
+        from safestclaw.channels.telegram import TelegramChannel
+    except ImportError:
+        msg = "Telegram library missing. Install with: pip install safestclaw[telegram]"
+        if required:
+            console.print(f"[red]{msg}[/red]")
+            raise typer.Exit(1)
+        console.print(f"[yellow]{msg}[/yellow]")
+        return False
+
+    allowed = tg_cfg.get("allowed_users") or None
+    engine.register_channel(
+        "telegram",
+        TelegramChannel(engine, token, allowed_users=allowed),
+    )
+    return True
 
 
 def create_engine(config_path: Path | None = None) -> SafestClaw:
@@ -344,12 +393,47 @@ async def run_cli(config_path: Path | None = None) -> None:
         await run_wizard(resolved_config, console)
 
     engine = create_engine(config_path)
+    engine.load_config()
 
     # Add CLI channel
     cli_channel = CLIChannel(engine)
     engine.register_channel("cli", cli_channel)
 
+    # Auto-start Telegram bot when configured + enabled
+    if _register_telegram_from_config(engine):
+        console.print("[green]Telegram bot enabled — starting alongside the CLI.[/green]")
+
     await engine.start()
+
+
+@app.command()
+def telegram(
+    config: Path | None = typer.Option(None, "--config", "-c", help="Config file path"),
+    verbose: bool = typer.Option(False, "--verbose"),
+):
+    """Start the Telegram bot only.
+
+    Reads token + allowlist from channels.telegram in config.yaml.
+    Configure with `safestclaw setup` or `setup telegram <token>` from the CLI.
+    """
+    setup_logging(verbose)
+
+    async def _run() -> None:
+        engine = create_engine(config)
+        engine.load_config()
+        await engine.memory.initialize()
+
+        _register_telegram_from_config(engine, required=True)
+        console.print("[green]Starting SafestClaw Telegram bot...[/green]")
+        await engine.start()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        import os
+        os._exit(0)
 
 
 @app.command()
@@ -1018,19 +1102,17 @@ def web(
                               help="Bind host (loopback only)"),
     port: int = typer.Option(8771, "--port", "-p", help="Port"),
     token: str = typer.Option("", "--token", help="Optional auth token"),
-    cli: bool = typer.Option(False, "--cli", help="Also start the interactive CLI channel"),
-    webhook: bool = typer.Option(False, "--webhook", help="Also start the webhook server"),
-    telegram: bool = typer.Option(False, "--telegram", help="Also start the Telegram bot"),
     config: Path | None = typer.Option(None, "--config", "-c"),
     verbose: bool = typer.Option(False, "--verbose"),
 ):
     """
-    Start the localhost web UI (and optionally other channels).
+    Start the localhost web UI.
 
     Exposes the entire SafestClaw engine — every action, plugin, and
     command — through a tiny chat interface plus a JSON API at
-    http://127.0.0.1:8771. Add --webhook/--telegram/--cli to run those
-    channels in the same process.
+    http://127.0.0.1:8771. Telegram auto-starts when enabled in config;
+    run other channels via their own commands (safestclaw telegram /
+    safestclaw webhook).
     """
     setup_logging(verbose)
 
@@ -1059,28 +1141,12 @@ def web(
             + ("  (token required)" if channel.auth_token else "")
         )
 
-        if cli:
-            engine.register_channel("cli", CLIChannel(engine))
-
-        if webhook:
-            from safestclaw.triggers.webhook import WebhookServer
-            engine.register_channel("webhook", WebhookServer())
-
-        if telegram:
-            token_cfg = engine.config.get("telegram", {}).get("token")
-            if token_cfg:
-                from safestclaw.channels.telegram import TelegramChannel
-                engine.register_channel(
-                    "telegram", TelegramChannel(engine, token_cfg)
-                )
-            else:
-                console.print("[yellow]Telegram token not configured[/yellow]")
+        # Auto-start Telegram bot when configured + enabled
+        if _register_telegram_from_config(engine):
+            console.print("[green]Telegram bot enabled — starting alongside the web UI.[/green]")
 
         try:
-            if cli or webhook or telegram:
-                await engine.start()
-            else:
-                await channel.start()
+            await engine.start()
         except KeyboardInterrupt:
             await channel.stop()
 

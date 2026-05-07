@@ -435,8 +435,105 @@ def _prompt_web_ui(console: Console, config_path: Path) -> None:
         f"[green]Web UI enabled at http://127.0.0.1:{port}[/green]"
     )
     console.print(
-        "[dim]Run [bold]safestclaw web[/bold] to start it standalone, or "
-        "[bold]safestclaw web --cli --webhook --telegram[/bold] alongside other channels.[/dim]"
+        "[dim]Run [bold]safestclaw web[/bold] to start it. Other channels "
+        "have their own commands: [bold]safestclaw[/bold] (CLI), "
+        "[bold]safestclaw webhook[/bold], [bold]safestclaw telegram[/bold].[/dim]"
+    )
+
+
+def _save_telegram_config(
+    config_path: Path,
+    token: str,
+    allowed_users: list[int] | None,
+) -> None:
+    """Persist channels.telegram settings into config.yaml."""
+    config: dict[str, Any] = {}
+    if config_path.exists():
+        try:
+            with open(config_path) as f:
+                config = yaml.safe_load(f) or {}
+        except Exception:
+            config = {}
+    channels = config.get("channels") or {}
+    telegram = channels.get("telegram") or {}
+    telegram["enabled"] = bool(token)
+    telegram["token"] = token
+    if allowed_users is not None:
+        telegram["allowed_users"] = allowed_users
+    elif "allowed_users" not in telegram:
+        telegram["allowed_users"] = []
+    channels["telegram"] = telegram
+    config["channels"] = channels
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+
+def _prompt_telegram(console: Console, config_path: Path) -> None:
+    """Optionally configure the Telegram bot channel."""
+    console.print()
+    console.print(
+        Panel.fit(
+            "[bold]Telegram bot[/bold]\n\n"
+            "Drive SafestClaw from your phone via a Telegram bot.\n\n"
+            "1. Open Telegram, message [bold]@BotFather[/bold]\n"
+            "2. Send /newbot, pick a name + username (must end in 'bot')\n"
+            "3. Copy the token BotFather gives you\n\n"
+            "Requires: pip install safestclaw[telegram]",
+            title="Optional: Telegram bot",
+            border_style="cyan",
+        )
+    )
+    if not Confirm.ask(
+        "Enable the Telegram bot?", default=False, console=console
+    ):
+        console.print("[dim]Telegram left disabled.[/dim]")
+        return
+
+    token = Prompt.ask(
+        "Paste your Telegram bot token (from @BotFather)",
+        password=True,
+        console=console,
+    ).strip()
+    if not token:
+        console.print("[yellow]No token entered — skipping Telegram.[/yellow]")
+        return
+    if ":" not in token or len(token) < 20:
+        console.print(
+            "[yellow]That doesn't look like a valid token "
+            "(expected like 1234567890:ABCdef...). Saving anyway.[/yellow]"
+        )
+
+    allowed_users: list[int] | None = None
+    if Confirm.ask(
+        "Restrict to specific Telegram user IDs? (recommended)",
+        default=True,
+        console=console,
+    ):
+        raw = Prompt.ask(
+            "  Allowed user IDs (comma-separated, or press Enter to set "
+            "later via 'setup telegram allow me' from chat)",
+            default="",
+            console=console,
+        ).strip()
+        if raw:
+            try:
+                allowed_users = [
+                    int(x.strip()) for x in raw.split(",") if x.strip()
+                ]
+            except ValueError:
+                console.print(
+                    "[yellow]Could not parse IDs — leaving allowlist empty.[/yellow]"
+                )
+                allowed_users = []
+        else:
+            allowed_users = []
+
+    _save_telegram_config(config_path, token, allowed_users)
+    console.print("[green]Telegram bot configured.[/green]")
+    console.print(
+        "[dim]It will start automatically when you run [bold]safestclaw[/bold] "
+        "or [bold]safestclaw web[/bold]. Run [bold]safestclaw telegram[/bold] "
+        "to start it standalone.[/dim]"
     )
 
 
@@ -577,6 +674,7 @@ async def run_wizard(
 
     if mode != 4:
         _prompt_web_ui(console, config_path)
+        _prompt_telegram(console, config_path)
         _prompt_fastmcp(console, config_path)
 
     _mark_completed(config_path)
