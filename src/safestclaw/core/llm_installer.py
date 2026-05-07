@@ -137,6 +137,19 @@ def _update_config(config_path: Path, provider_config: dict) -> bool:
         providers.append(provider_config)
         config["ai_providers"] = providers
 
+        # Auto-enable LLM-assisted NLU so the configured provider takes
+        # effect across every UI (CLI, web, Telegram, …) without the user
+        # having to flip a separate flag. We only set it when it hasn't
+        # been touched yet, so an explicit `enabled: false` is preserved.
+        sc = config.get("safestclaw") or {}
+        nlu = sc.get("nlu")
+        if not isinstance(nlu, dict):
+            nlu = {}
+        if "enabled" not in nlu:
+            nlu["enabled"] = True
+            sc["nlu"] = nlu
+            config["safestclaw"] = sc
+
         with open(config_path, "w") as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
