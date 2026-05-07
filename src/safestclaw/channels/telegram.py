@@ -1,10 +1,11 @@
 """Telegram channel adapter."""
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 try:
     from telegram import Update
+    from telegram.error import TelegramError
     from telegram.ext import (
         Application,
         CommandHandler,
@@ -15,6 +16,7 @@ try:
     HAS_TELEGRAM = True
 except ImportError:
     HAS_TELEGRAM = False
+    TelegramError = Exception  # type: ignore[assignment,misc]
 
 from safestclaw.channels.base import BaseChannel
 
@@ -66,11 +68,33 @@ class TelegramChannel(BaseChannel):
         self.app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
         )
+        self.app.add_error_handler(self._on_error)
 
         logger.info("Starting Telegram bot...")
         await self.app.initialize()
         await self.app.start()
-        await self.app.updater.start_polling()
+
+        # Confirm we're authenticated and warn about group-privacy gotchas.
+        try:
+            me = await self.app.bot.get_me()
+            logger.info(
+                "Telegram bot connected as @%s (id=%s)",
+                me.username, me.id,
+            )
+            if not getattr(me, "can_read_all_group_messages", False):
+                logger.warning(
+                    "Group privacy mode is ON for @%s — in groups the bot will "
+                    "only see commands, @mentions, and replies to its own "
+                    "messages. To respond to every group message, message "
+                    "@BotFather → /setprivacy → select your bot → Disable.",
+                    me.username,
+                )
+        except Exception as e:
+            logger.warning("Could not fetch bot info: %s", e)
+
+        await self.app.updater.start_polling(
+            allowed_updates=["message", "edited_message", "callback_query"],
+        )
 
     async def stop(self) -> None:
         """Stop the Telegram bot."""
@@ -81,16 +105,56 @@ class TelegramChannel(BaseChannel):
             logger.info("Telegram bot stopped")
 
     async def send(self, user_id: str, message: str) -> None:
-        """Send a message to a user."""
-        if self.app:
+        """Send a message to a user, with Markdown→plain-text fallback."""
+        if not self.app or not message:
+            return
+        chat_id = int(user_id)
+        try:
+            await self.app.bot.send_message(
+                chat_id=chat_id, text=message, parse_mode="Markdown",
+            )
+        except TelegramError as e:
+            # Markdown parsing or formatting issue — retry as plain text so
+            # the user always gets the response.
+            logger.warning("Markdown send failed (%s); retrying as plain text", e)
             try:
-                await self.app.bot.send_message(
-                    chat_id=int(user_id),
-                    text=message,
-                    parse_mode="Markdown",
-                )
-            except Exception as e:
-                logger.error(f"Failed to send message: {e}")
+                await self.app.bot.send_message(chat_id=chat_id, text=message)
+            except Exception as e2:
+                logger.error("Plain-text send also failed: %s", e2)
+        except Exception as e:
+            logger.error("Failed to send message: %s", e)
+
+    async def _safe_reply(self, message: Any, text: str) -> None:
+        """Reply with Markdown, falling back to plain text on parse errors.
+
+        Engine responses occasionally include unbalanced ``*``/``_``/backticks
+        (action help, code excerpts, etc.). Telegram's legacy Markdown parser
+        rejects those with HTTP 400 and the user would see no reply at all
+        unless we retry without ``parse_mode``.
+        """
+        if not text:
+            return
+        try:
+            await message.reply_text(text, parse_mode="Markdown")
+        except TelegramError as e:
+            logger.warning("Markdown reply failed (%s); retrying as plain text", e)
+            try:
+                await message.reply_text(text)
+            except Exception as e2:
+                logger.error("Plain-text reply also failed: %s", e2)
+        except Exception as e:
+            logger.error("Failed to reply: %s", e)
+
+    async def _on_error(
+        self,
+        update: object,
+        context: "ContextTypes.DEFAULT_TYPE",
+    ) -> None:
+        """Log uncaught handler errors so AI/engine failures are visible."""
+        logger.exception(
+            "Telegram handler error: %s", context.error,
+            exc_info=context.error,
+        )
 
     def _is_allowed(self, user_id: int) -> bool:
         """Check if user is allowed."""
@@ -108,14 +172,16 @@ class TelegramChannel(BaseChannel):
             return
 
         if not self._is_allowed(update.effective_user.id):
-            await update.message.reply_text("Sorry, you're not authorized to use this bot.")
+            await self._safe_reply(
+                update.message, "Sorry, you're not authorized to use this bot."
+            )
             return
 
-        await update.message.reply_text(
+        await self._safe_reply(
+            update.message,
             "Welcome to SafestClaw! 🐾\n\n"
             "I'm your privacy-first automation assistant.\n"
             "Type /help to see what I can do.",
-            parse_mode="Markdown",
         )
 
     async def _cmd_help(
@@ -128,7 +194,7 @@ class TelegramChannel(BaseChannel):
             return
 
         help_text = self.engine.get_help()
-        await update.message.reply_text(help_text, parse_mode="Markdown")
+        await self._safe_reply(update.message, help_text)
 
     async def _handle_message(
         self,
@@ -150,14 +216,28 @@ class TelegramChannel(BaseChannel):
         )
 
         if not is_self_register and not self._is_allowed(user_id):
-            await update.message.reply_text("Sorry, you're not authorized to use this bot.")
+            await self._safe_reply(
+                update.message, "Sorry, you're not authorized to use this bot."
+            )
             return
 
-        # Process message
-        response = await self.handle_message(
-            text=text,
-            user_id=str(user_id),
-        )
+        # Route through the engine (rule-based parser \u2192 action \u2192 optional
+        # AI/NLU). Surface errors so the user always gets a reply, even when
+        # an action or AI provider raises.
+        try:
+            response = await self.handle_message(
+                text=text,
+                user_id=str(user_id),
+            )
+        except Exception as e:
+            logger.exception("Engine failed to handle message from %s", user_id)
+            await self._safe_reply(
+                update.message, f"Something went wrong handling that: {e}"
+            )
+            return
+
+        if not response:
+            response = "(no response)"
 
         # Warn when no allowlist is configured (bot is open to anyone)
         if no_allowlist and not is_self_register:
@@ -167,5 +247,4 @@ class TelegramChannel(BaseChannel):
                 "Send `setup telegram allow me` to restrict access to your ID."
             )
 
-        # Send response
-        await update.message.reply_text(response, parse_mode="Markdown")
+        await self._safe_reply(update.message, response)
