@@ -1,5 +1,6 @@
 """Telegram channel adapter."""
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -57,6 +58,7 @@ class TelegramChannel(BaseChannel):
         self.token = token
         self.allowed_users = set(allowed_users) if allowed_users else None
         self.app: Application | None = None
+        self._stop_event: asyncio.Event | None = None
 
     async def start(self) -> None:
         """Start the Telegram bot."""
@@ -96,12 +98,30 @@ class TelegramChannel(BaseChannel):
             allowed_updates=["message", "edited_message", "callback_query"],
         )
 
+        # python-telegram-bot v20+ kicks polling off in the background and
+        # returns from start_polling() immediately. Block here so the engine's
+        # asyncio.gather() over channel tasks doesn't see this coroutine
+        # finish and tear the whole process down. stop() releases this wait.
+        self._stop_event = asyncio.Event()
+        try:
+            await self._stop_event.wait()
+        except asyncio.CancelledError:
+            # Engine was cancelled — let stop() do the cleanup.
+            raise
+
     async def stop(self) -> None:
         """Stop the Telegram bot."""
+        if self._stop_event is not None:
+            self._stop_event.set()
         if self.app:
-            await self.app.updater.stop()
-            await self.app.stop()
-            await self.app.shutdown()
+            try:
+                if self.app.updater and self.app.updater.running:
+                    await self.app.updater.stop()
+                if self.app.running:
+                    await self.app.stop()
+                await self.app.shutdown()
+            except Exception as e:
+                logger.warning("Error during Telegram shutdown: %s", e)
             logger.info("Telegram bot stopped")
 
     async def send(self, user_id: str, message: str) -> None:
