@@ -107,6 +107,31 @@ def _register_telegram_from_config(
         console.print(f"[yellow]{msg}[/yellow]")
         return False
 
+    # If the user installed a cron / Task Scheduler tick, defer to it.
+    # Telegram serialises getUpdates consumers and would 409 if both ran.
+    # The standalone `safestclaw telegram` command sets required=True and
+    # bypasses this — there we just warn and let the user proceed.
+    try:
+        from safestclaw.core import tick_scheduler
+        sched = tick_scheduler.status()
+    except Exception:
+        sched = None
+    if sched and sched.installed:
+        if required:
+            console.print(
+                "[yellow]Heads up: a scheduled Telegram tick is installed. "
+                "Running long polling at the same time will cause 409 "
+                "Conflicts on every tick. Remove with "
+                "[bold]safestclaw telegram-tick --uninstall[/bold] if you "
+                "want to use long polling exclusively.[/yellow]"
+            )
+        else:
+            console.print(
+                "[dim]Telegram is handled by the scheduled tick "
+                "(safestclaw telegram-tick). Skipping long polling here.[/dim]"
+            )
+            return False
+
     allowed = tg_cfg.get("allowed_users") or None
     engine.register_channel(
         "telegram",
