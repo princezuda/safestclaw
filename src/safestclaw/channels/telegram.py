@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import re
 from typing import TYPE_CHECKING, Any
 
 try:
@@ -64,14 +63,10 @@ class TelegramChannel(BaseChannel):
         # Lightweight per-Telegram-user onboarding: ask "LLM, or learn my
         # commands?" once per user. Tracked in-memory only — a restart
         # re-engages the welcome, which is acceptable for the simple flow.
+        # (Conversational fallback for unparsed messages now lives in the
+        # engine, so it's shared with the web UI and CLI.)
         self._welcomed: set[int] = set()
         self._awaiting_choice: set[int] = set()
-
-        # Conversational state: which capability hints we've already given
-        # this user, and whether we've already oriented them toward the
-        # bot's automation focus. We use these to avoid nagging.
-        self._suggested: dict[int, set[str]] = {}
-        self._chat_oriented: set[int] = set()
 
     async def start(self) -> None:
         """Start the Telegram bot."""
@@ -229,109 +224,9 @@ class TelegramChannel(BaseChannel):
         "  `blog write news ...` — assemble a post (no LLM)\n"
         "  `research <topic>`    — wiki + web extracts\n"
         "  `style learn <text>`  — teach me your writing voice\n\n"
-        "Type /help any time, or `setup ai <key>` later if you change your mind."
+        "Or just ask me anything you want automated and I'll explain — "
+        "or `setup ai <key>` later if you change your mind."
     )
-
-    # ------------------------------------------------------------------
-    # Conversational fallback — when the engine couldn't parse a command.
-    #
-    # Goals:
-    #  * always reply (the bot must not go silent),
-    #  * answer non-command questions briefly,
-    #  * if the message is "command-adjacent" (mentions a domain we cover),
-    #    suggest the relevant capability — but only once per topic per user
-    #    unless they ask unambiguously ("can you …?"),
-    #  * mention "I'm built for automation, but I can chat too" exactly
-    #    once per user, then drop it.
-    # ------------------------------------------------------------------
-
-    # (topic_id, regex, suggestion shown to the user)
-    _TOPIC_HINTS: list[tuple[str, str, str]] = [
-        ("weather",
-         r"\b(weather|temperature|forecast|rain|sunny|cloudy|degrees|humidity)\b",
-         "I can pull current conditions — try `weather <city>`."),
-        ("news",
-         r"\b(news|headlines?|breaking|articles?|stories)\b",
-         "I can fetch RSS headlines — try `news` or `news tech`."),
-        ("summarize",
-         r"\b(summar(y|ize|ise)|tl;?dr|recap|the gist)\b",
-         "I can summarize URLs and text — try `summarize <url>`."),
-        ("calendar",
-         r"\b(calendar|schedule|meetings?|events?|appointments?|agenda)\b",
-         "I can read events from .ics or CalDAV — try `calendar today`."),
-        ("reminder",
-         r"\b(remind(er)?|alarm|notify me|alert me|don'?t let me forget)\b",
-         "I can set reminders — try `remind me to <thing> at <time>`."),
-        ("blog",
-         r"\b(blog|publish a post|write an article)\b",
-         "I can assemble blog posts — try `blog write news <topic>`."),
-        ("research",
-         r"\b(research|look (it )?up|find out|tell me about|wiki(pedia)?)\b",
-         "I can pull from Wikipedia and the web — try `research <topic>`."),
-        ("code",
-         r"\b(code|function|script|debug|refactor|programming)\b",
-         "I can scaffold or review code — try `code <prompt>`."),
-        ("email",
-         r"\b(emails?|inbox|mailbox)\b",
-         "I can read/send email when configured — try `email check` or `setup email`."),
-        ("crawl",
-         r"\b(crawl|scrape|extract links?|fetch (the )?page)\b",
-         "I can fetch pages and pull out links — try `crawl <url>`."),
-        ("briefing",
-         r"\b(briefing|digest|morning report|catch me up)\b",
-         "I can build a daily briefing — try `briefing`."),
-    ]
-
-    _CAPABILITY_QUESTION = re.compile(
-        r"\b(can|could|do|are|is there|how do)\b.*\b(you|i)\b",
-        re.IGNORECASE,
-    )
-    _GREETING = re.compile(
-        r"^\s*(hi|hello|hey|yo|sup|good\s+(morning|afternoon|evening)|howdy)\b",
-        re.IGNORECASE,
-    )
-    _THANKS = re.compile(
-        r"^\s*(thanks|thank\s+you|thx|ty|cheers|appreciate it)\b",
-        re.IGNORECASE,
-    )
-
-    def _detect_topic(self, text: str) -> tuple[str, str] | None:
-        """Return (topic_id, suggestion) for the first matching topic, else None."""
-        for topic, pattern, suggestion in self._TOPIC_HINTS:
-            if re.search(pattern, text, re.IGNORECASE):
-                return topic, suggestion
-        return None
-
-    def _chat_reply(self, text: str, user_id: int) -> str:
-        """Build a chat-friendly reply for an unparsed message."""
-        if self._GREETING.match(text):
-            return "Hey 👋 — what can I help you automate today? (Try /help.)"
-        if self._THANKS.match(text):
-            return "Anytime."
-
-        topic_match = self._detect_topic(text)
-        if topic_match:
-            topic, suggestion = topic_match
-            seen = self._suggested.setdefault(user_id, set())
-            asks_explicitly = bool(self._CAPABILITY_QUESTION.search(text))
-            # Suggest the first time, or whenever the user explicitly asks.
-            if topic not in seen or asks_explicitly:
-                seen.add(topic)
-                return suggestion
-            # They've heard this hint already and aren't asking unambiguously
-            # — chat back briefly without re-pitching the feature.
-            return "Got you. Want me to do anything with that?"
-
-        # Not command-adjacent — just chat. Mention the bot's purpose once
-        # so the user knows what to lean on, then drop it.
-        if user_id not in self._chat_oriented:
-            self._chat_oriented.add(user_id)
-            return (
-                "I'm here. I'm built to automate things — summaries, news, "
-                "reminders, blogs, briefings, research — but happy to chat. "
-                "Type /help for the menu, or just ask."
-            )
-        return "I'm listening — what would you like me to do?"
 
     def _parse_onboarding_choice(self, text: str) -> str | None:
         """Map a user reply to an onboarding outcome.
@@ -348,8 +243,8 @@ class TelegramChannel(BaseChannel):
             return self._ONBOARDING_COMMANDS_REPLY
         if t in ("skip", "later", "cancel", "no", "nope"):
             return (
-                "OK — skipped. Type /help to see what I can do, or "
-                "`setup ai <your-key>` any time to add an LLM."
+                "OK — skipped. Just ask me anything you want automated and "
+                "I'll help, or `setup ai <your-key>` any time to add an LLM."
             )
         return None
 
@@ -450,12 +345,6 @@ class TelegramChannel(BaseChannel):
 
         if not response:
             response = "(no response)"
-
-        # Conversational fallback: when the engine couldn't parse the
-        # message as a command (and no LLM-based NLU rescued it), turn
-        # the generic "I didn't understand…" into a chat-friendly reply.
-        if response.startswith("I didn't understand"):
-            response = self._chat_reply(text, user_id)
 
         # Warn when no allowlist is configured (bot is open to anyone)
         if no_allowlist and not is_self_register:

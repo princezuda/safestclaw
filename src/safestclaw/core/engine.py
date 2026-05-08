@@ -14,6 +14,7 @@ import yaml
 
 from safestclaw.core.chat_setup import ChatSetup
 from safestclaw.core.connectivity import get_checker, parse_offline_intent
+from safestclaw.core.conversational import ConversationalFallback
 from safestclaw.core.memory import Memory
 from safestclaw.core.parser import CommandParser, friendly_intro, is_conversational
 from safestclaw.core.scheduler import Scheduler
@@ -56,6 +57,7 @@ class SafestClaw:
         self.parser = CommandParser()
         self.memory = Memory(self.data_dir / "memory.db")
         self.scheduler = Scheduler()
+        self.conversational = ConversationalFallback(self.memory)
 
         # Optional NLU bridge (loaded after config)
         self.nlu: Any = None
@@ -317,7 +319,7 @@ class SafestClaw:
                 ttl_seconds=120,  # Remember for 2 minutes
             )
 
-        return "I didn't understand that command. Try 'help' to see what I can do."
+        return await self.conversational.reply(text, user_id or "")
 
     async def _handle_chain(
         self,
