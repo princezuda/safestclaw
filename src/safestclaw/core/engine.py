@@ -17,6 +17,7 @@ from safestclaw.core.connectivity import get_checker, parse_offline_intent
 from safestclaw.core.conversational import ConversationalFallback
 from safestclaw.core.memory import Memory
 from safestclaw.core.parser import CommandParser, friendly_intro, is_conversational
+from safestclaw.core.paths import default_config_path
 from safestclaw.core.scheduler import Scheduler
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,7 @@ class SafestClaw:
         config_path: Path | None = None,
         data_dir: Path | None = None,
     ):
-        self.config_path = config_path or Path("config/config.yaml")
+        self.config_path = config_path or default_config_path()
         self.data_dir = data_dir or Path.home() / ".safestclaw"
         self.data_dir.mkdir(parents=True, exist_ok=True)
 

@@ -21,6 +21,8 @@ from pathlib import Path
 
 import yaml
 
+from safestclaw.core.paths import default_config_path
+
 logger = logging.getLogger(__name__)
 
 # Cloud providers and their config shapes
@@ -383,7 +385,7 @@ async def setup_local(
 
     # Step 4: Configure
     lines.append("**Step 4: Configure SafestClaw**")
-    cfg_path = config_path or Path("config/config.yaml")
+    cfg_path = config_path or default_config_path()
     ollama_config = {
         "label": "local-ollama",
         "provider": "ollama",
@@ -434,7 +436,7 @@ async def auto_setup(
         Status message
     """
     arg = arg.strip()
-    cfg = config_path or Path("config/config.yaml")
+    cfg = config_path or default_config_path()
 
     # No argument — show help
     if not arg:
@@ -850,7 +852,7 @@ def get_status(config_path: Path | None = None) -> str:
     lines = ["**AI Status**", ""]
 
     # Check config for cloud providers
-    cfg_path = config_path or Path("config/config.yaml")
+    cfg_path = config_path or default_config_path()
     if cfg_path.exists():
         try:
             with open(cfg_path) as f:

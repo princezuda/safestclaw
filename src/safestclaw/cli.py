@@ -421,7 +421,8 @@ def main(
 
 async def run_cli(config_path: Path | None = None) -> None:
     """Run interactive CLI."""
-    resolved_config = config_path or Path("config/config.yaml")
+    from safestclaw.core.paths import default_config_path
+    resolved_config = config_path or default_config_path()
     if offer_wizard_if_first_run(resolved_config, console):
         await run_wizard(resolved_config, console)
 
@@ -1241,7 +1242,8 @@ def setup(
 ):
     """Run the interactive setup wizard (local / LLM / hybrid)."""
     setup_logging(verbose)
-    config_path = config or Path("config/config.yaml")
+    from safestclaw.core.paths import default_config_path
+    config_path = config or default_config_path()
     asyncio.run(run_wizard(config_path, console))
 
 
