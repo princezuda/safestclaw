@@ -177,6 +177,7 @@ def setup_with_key(api_key: str, config_path: Path) -> str:
     Returns:
         Status message
     """
+    api_key = (api_key or "").strip()
     provider_name = _detect_provider(api_key)
 
     if not provider_name:

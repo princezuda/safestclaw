@@ -654,7 +654,11 @@ class CommandParser:
                 patterns=[
                     r"(?:show|what(?:'s| is))\s+(?:on\s+)?my\s+(?:calendar|schedule)",
                     r"(?:add|create|schedule)\s+(?:a\s+)?(?:meeting|event|appointment)\s+(.+)",
-                    r"(?:what(?:'s| is)|do\s+i\s+have)\s+(?:happening\s+)?(?:on\s+)?(.+)",
+                    # Calendar-context "what's happening / what's on" /
+                    # "do I have any meetings" — require a calendar word so
+                    # generic "what is X" questions don't fall in here.
+                    r"(?:what(?:'s| is))\s+(?:happening|going on|scheduled|on(?: the)? agenda)\s*(.*)",
+                    r"do\s+i\s+have\s+(?:any\s+)?(?:meetings?|events?|appointments?|plans?)\b\s*(.*)",
                     r"calendar\s+(today|upcoming|week|import|sync|calendars)\s*(.*)",
                     r"calendar\s+sync",
                 ],

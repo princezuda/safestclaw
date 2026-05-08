@@ -348,8 +348,11 @@ class SafestClaw:
                 "blogs, briefings, research — and I'll take it from there. "
                 "(Or `/help` for the raw docs.)"
             )
+        llm_error = getattr(self.nlu, "last_error", None) if self.nlu else None
         return await conv.reply(
-            text, user_id or "", has_llm=self.nlu is not None,
+            text, user_id or "",
+            has_llm=self.nlu is not None,
+            llm_error=llm_error,
         )
 
     async def _handle_chain(
