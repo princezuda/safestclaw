@@ -316,6 +316,15 @@ class SafestClaw:
                 if intro_key and is_first_turn:
                     await self.memory.set(intro_key, "1")
                 return answer
+            # NLU was configured but didn't produce a reply (provider
+            # error, empty response, …). Log loudly so the user can see
+            # in `safestclaw --verbose` why their LLM-on chat is hitting
+            # the canned fallback.
+            logger.warning(
+                "NLU is configured but produced no reply for: %r — "
+                "check `setup ai status`.",
+                text[:100],
+            )
 
         # Track failed command for potential auto-learning
         # If the user immediately follows up with a successful command,
@@ -338,7 +347,9 @@ class SafestClaw:
                 "blogs, briefings, research — and I'll take it from there. "
                 "(Or `/help` for the raw docs.)"
             )
-        return await conv.reply(text, user_id or "")
+        return await conv.reply(
+            text, user_id or "", has_llm=self.nlu is not None,
+        )
 
     async def _handle_chain(
         self,

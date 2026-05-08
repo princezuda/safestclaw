@@ -128,8 +128,20 @@ class ConversationalFallback:
     def __init__(self, memory: Memory) -> None:
         self.memory = memory
 
-    async def reply(self, text: str, user_id: str) -> str:
-        """Return a friendly response for an unparsed message."""
+    async def reply(
+        self,
+        text: str,
+        user_id: str,
+        has_llm: bool = False,
+    ) -> str:
+        """Return a friendly response for an unparsed message.
+
+        ``has_llm`` lets the caller signal that an LLM/NLU was configured
+        but didn't produce a reply (e.g. provider call failed). When True
+        the orientation line points the user at `setup ai status` so the
+        silent-failure case is debuggable. When False it suggests
+        plugging an LLM in for free-form chat.
+        """
         if _GREETING.match(text):
             return "Hey 👋 — what would you like me to automate?"
         if _THANKS.match(text):
@@ -144,7 +156,7 @@ class ConversationalFallback:
         if topic_match:
             return await self._topic_reply(text, user_id, *topic_match)
 
-        return await self._orientation_reply(user_id)
+        return await self._orientation_reply(user_id, has_llm=has_llm)
 
     async def _topic_reply(
         self,
@@ -163,16 +175,44 @@ class ConversationalFallback:
             return hint
         return "Got you. Want me to do anything with that?"
 
-    async def _orientation_reply(self, user_id: str) -> str:
-        """Show the automation orientation exactly once per user."""
+    async def _orientation_reply(
+        self, user_id: str, has_llm: bool = False,
+    ) -> str:
+        """Show the automation orientation; tailor for LLM-on/off."""
         oriented_key = f"_chat_oriented:{user_id}" if user_id else None
         oriented = bool(await self.memory.get(oriented_key)) if oriented_key else False
         if not oriented:
             if oriented_key:
                 await self.memory.set(oriented_key, "1")
+            if has_llm:
+                # NLU is configured but didn't produce a reply for this
+                # turn — surface the diagnostic instead of pretending we
+                # don't have an LLM at all.
+                return (
+                    "I'm here. (My LLM didn't answer this turn — if it "
+                    "keeps doing that, run `setup ai status` to check.) "
+                    "I can also automate things — summaries, news, "
+                    "reminders, blogs, briefings, research — or read "
+                    "the raw documentation with /help."
+                )
             return (
                 "Hey — I'm here to help with automation. Ask about anything "
                 "you want automated and I can help with it, or you can read "
-                "the raw documentation with /help."
+                "the raw documentation with /help.\n\n"
+                "_For free-form chat I need an LLM. Plug one in with "
+                "`setup ai sk-ant-...` (Anthropic), `setup ai sk-...` (OpenAI), "
+                "`setup ai AI...` (Gemini), or `setup ai local` for free local "
+                "Ollama._"
             )
-        return "I'm listening — what would you like me to do?"
+        # Subsequent off-topic — keep nudging toward the LLM if not yet
+        # set up; otherwise just acknowledge and move on.
+        if has_llm:
+            return (
+                "I'm listening — but my LLM didn't reply this turn. "
+                "Try `setup ai status` if it keeps happening."
+            )
+        return (
+            "I can't free-form chat without an LLM — I only have canned "
+            "greetings and capability hints. To unlock real chat: "
+            "`setup ai <your-key>` or `setup ai local`."
+        )
