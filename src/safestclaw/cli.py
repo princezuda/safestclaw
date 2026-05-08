@@ -1244,6 +1244,18 @@ def web(
                               help="Bind host (loopback only)"),
     port: int = typer.Option(8771, "--port", "-p", help="Port"),
     token: str = typer.Option("", "--token", help="Optional auth token"),
+    install: bool = typer.Option(
+        False, "--install",
+        help="Register a system service that auto-starts the web UI at login.",
+    ),
+    uninstall: bool = typer.Option(
+        False, "--uninstall",
+        help="Remove the auto-start service.",
+    ),
+    status: bool = typer.Option(
+        False, "--status",
+        help="Show whether the auto-start service is installed.",
+    ),
     config: Path | None = typer.Option(None, "--config", "-c"),
     verbose: bool = typer.Option(False, "--verbose"),
 ):
@@ -1255,8 +1267,43 @@ def web(
     http://127.0.0.1:8771. Telegram auto-starts when enabled in config;
     run other channels via their own commands (safestclaw telegram /
     safestclaw webhook).
+
+    With --install, registers a system service so the web UI comes
+    back automatically at login (systemd user service on Linux,
+    launchd agent on macOS, Task Scheduler at-logon task on Windows).
     """
     setup_logging(verbose)
+
+    # ── Service management ─────────────────────────────────────────────
+    if install or uninstall or status:
+        from safestclaw.core import web_service
+
+        if install:
+            try:
+                result = web_service.install(port=port)
+            except Exception as e:
+                console.print(f"[red]Could not install service: {e}[/red]")
+                raise typer.Exit(1)
+            console.print(
+                f"[green]Web UI auto-start service installed on port "
+                f"{port}.[/green]"
+            )
+            console.print(f"[dim]{result.detail}[/dim]")
+            return
+        if uninstall:
+            try:
+                result = web_service.uninstall()
+            except Exception as e:
+                console.print(f"[red]Could not remove service: {e}[/red]")
+                raise typer.Exit(1)
+            console.print(f"[green]{result.detail}[/green]")
+            return
+        if status:
+            result = web_service.status()
+            label = "installed" if result.installed else "not installed"
+            console.print(f"[bold]Auto-start service:[/bold] {label}")
+            console.print(f"[dim]{result.detail}[/dim]")
+            return
 
     async def _run() -> None:
         engine = create_engine(config)
