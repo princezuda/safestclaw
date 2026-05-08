@@ -11,10 +11,10 @@ jobs:
     name: Build distribution
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -25,7 +25,7 @@ jobs:
         run: python -m build
 
       - name: Upload built distributions
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dist
           path: dist/
@@ -38,10 +38,16 @@ jobs:
       id-token: write
     steps:
       - name: Download built distributions
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: dist
           path: dist/
 
       - name: Publish via PyPI Trusted Publishing
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # If the tag was created on a commit whose version was
+          # already published (e.g. a tag pointing at the wrong sha),
+          # let the workflow succeed instead of failing on the 400 —
+          # PyPI files are immutable and there's nothing to do.
+          skip-existing: true

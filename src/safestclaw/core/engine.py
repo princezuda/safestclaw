@@ -178,11 +178,14 @@ class SafestClaw:
         """
         metadata = metadata or {}
 
-        # First-time setup walkthrough — runs in any channel that goes
-        # through handle_message (CLI, web UI, Telegram, …) for any user
-        # whose config doesn't have `safestclaw.setup_completed: true`.
-        # The user can type "skip" to defer.
-        if self.chat_setup.needs_setup():
+        # First-time rich setup walkthrough is CLI-only. Web users have
+        # the conversational fallback's once-per-user orientation line,
+        # and Telegram users get the channel's own "1=LLM / 2=commands"
+        # wizard before this method is even called — running the 4-step
+        # ChatSetup in those channels just blocks them from chatting
+        # naturally. CLI users still get the full walkthrough on first
+        # run; everyone can run `safestclaw setup` for the rich flow.
+        if channel == "cli" and self.chat_setup.needs_setup():
             reply = await self.chat_setup.handle(text, user_id)
             if reply is not None:
                 return reply
