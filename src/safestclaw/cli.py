@@ -173,7 +173,12 @@ def create_engine(config_path: Path | None = None) -> SafestClaw:
     engine.register_action("blog", blog_action.execute)
     engine.register_action("research", research_action.execute)
     engine.register_action("code", code_action.execute)
-    engine.register_action("help", lambda **_: engine.get_help())
+    # The chat-driven `help` intent ("help", "what can you do", …) gets
+    # the friendly conversational capability summary. The explicit `/help`
+    # paths (Telegram /help, web /api/help, CLI `safestclaw --help`) keep
+    # rendering the raw `engine.get_help()` dump.
+    from safestclaw.core.conversational import _CAPABILITY_SUMMARY
+    engine.register_action("help", lambda **_: _CAPABILITY_SUMMARY)
 
     # Register style profile action (fuzzy learning)
     engine.register_action("style", _style_action)

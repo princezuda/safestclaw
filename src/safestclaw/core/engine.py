@@ -221,7 +221,12 @@ class SafestClaw:
             return await self._handle_chain(text, channel, user_id, metadata)
 
         # Parse the command
-        parsed = self.parser.parse(text, user_id)
+        # When an LLM-based NLU is configured, run the parser in strict
+        # mode so the rule-based fuzzy layer doesn't claim ambiguous
+        # input that should go to the LLM. The translated path below
+        # (LLM → command string → parser) keeps fuzzy enabled because
+        # by then the LLM has already produced a deterministic command.
+        parsed = self.parser.parse(text, user_id, strict=self.nlu is not None)
         logger.debug(f"Parsed command: {parsed}")
 
         # Store in memory
