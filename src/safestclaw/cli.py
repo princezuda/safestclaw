@@ -2,12 +2,13 @@
 SafestClaw CLI - Main entry point.
 
 Usage:
-    safestclaw              # Start interactive CLI
-    safestclaw web          # Start the localhost web UI
-    safestclaw telegram     # Start the Telegram bot
-    safestclaw webhook      # Start webhook server only
-    safestclaw summarize    # Summarize URL or text
-    safestclaw crawl        # Crawl a URL
+    safestclaw                 # Start interactive CLI
+    safestclaw web             # Start the localhost web UI
+    safestclaw telegram        # Start the Telegram bot (long polling)
+    safestclaw telegram-tick   # Process pending Telegram messages once (cron)
+    safestclaw webhook         # Start webhook server only
+    safestclaw summarize       # Summarize URL or text
+    safestclaw crawl           # Crawl a URL
 """
 
 import asyncio
@@ -434,6 +435,69 @@ def telegram(
     finally:
         import os
         os._exit(0)
+
+
+@app.command(name="telegram-tick")
+def telegram_tick(
+    config: Path | None = typer.Option(None, "--config", "-c", help="Config file path"),
+    verbose: bool = typer.Option(False, "--verbose"),
+):
+    """Process pending Telegram messages once and exit (cron-friendly).
+
+    Designed for cron/Task Scheduler so the bot keeps replying (LLM
+    included) even when the always-on `safestclaw telegram` process
+    isn't running. Telegram queues unread updates for ~24 hours, so
+    missed messages get caught up on the next tick.
+
+    Example crontab entry (every 2 minutes):
+
+        */2 * * * * /usr/bin/safestclaw telegram-tick
+
+    Do NOT run this alongside `safestclaw telegram`; Telegram allows
+    only one getUpdates consumer at a time and will return 409 Conflict.
+    """
+    setup_logging(verbose)
+
+    async def _run() -> int:
+        engine = create_engine(config)
+        engine.load_config()
+        await engine.memory.initialize()
+
+        tg_cfg = (engine.config.get("channels") or {}).get("telegram") or {}
+        token = (tg_cfg.get("token") or "").strip()
+        if not token:
+            console.print(
+                "[red]Telegram token not configured.[/red] "
+                "Run [bold]safestclaw setup[/bold] first."
+            )
+            raise typer.Exit(1)
+
+        try:
+            from safestclaw.channels.telegram import TelegramChannel
+        except ImportError:
+            console.print(
+                "[red]Telegram library missing.[/red] "
+                "Install with: pip install safestclaw[telegram]"
+            )
+            raise typer.Exit(1)
+
+        channel = TelegramChannel(
+            engine, token, allowed_users=tg_cfg.get("allowed_users") or None,
+        )
+        try:
+            n = await channel.tick()
+        finally:
+            await engine.memory.close()
+        return n
+
+    try:
+        n = asyncio.run(_run())
+        if n:
+            console.print(f"[green]Processed {n} update(s).[/green]")
+        else:
+            console.print("[dim]No pending updates.[/dim]")
+    except KeyboardInterrupt:
+        pass
 
 
 @app.command()

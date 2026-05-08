@@ -60,13 +60,31 @@ class TelegramChannel(BaseChannel):
         self.app: Application | None = None
         self._stop_event: asyncio.Event | None = None
 
-        # Lightweight per-Telegram-user onboarding: ask "LLM, or learn my
-        # commands?" once per user. Tracked in-memory only — a restart
-        # re-engages the welcome, which is acceptable for the simple flow.
-        # (Conversational fallback for unparsed messages now lives in the
-        # engine, so it's shared with the web UI and CLI.)
-        self._welcomed: set[int] = set()
-        self._awaiting_choice: set[int] = set()
+    # ------------------------------------------------------------------
+    # Persistent per-user onboarding state.
+    #
+    # Stored in engine.memory so state stays consistent across:
+    #   * long-running polling (`safestclaw telegram`),
+    #   * cron-driven one-shot ticks (`safestclaw telegram-tick`),
+    #   * restarts of either.
+    # ------------------------------------------------------------------
+
+    async def _has_been_welcomed(self, user_id: int) -> bool:
+        return bool(await self.engine.memory.get(f"_telegram:welcomed:{user_id}"))
+
+    async def _mark_welcomed(self, user_id: int) -> None:
+        await self.engine.memory.set(f"_telegram:welcomed:{user_id}", "1")
+
+    async def _is_awaiting_choice(self, user_id: int) -> bool:
+        return bool(await self.engine.memory.get(f"_telegram:awaiting:{user_id}"))
+
+    async def _set_awaiting_choice(self, user_id: int, awaiting: bool) -> None:
+        key = f"_telegram:awaiting:{user_id}"
+        if awaiting:
+            await self.engine.memory.set(key, "1")
+        else:
+            # Memory has no explicit delete; a 1-second TTL clears the row.
+            await self.engine.memory.set(key, "", ttl_seconds=1)
 
     async def start(self) -> None:
         """Start the Telegram bot."""
@@ -265,8 +283,8 @@ class TelegramChannel(BaseChannel):
 
         # /start always (re-)launches the simple wizard.
         uid = update.effective_user.id
-        self._welcomed.add(uid)
-        self._awaiting_choice.add(uid)
+        await self._mark_welcomed(uid)
+        await self._set_awaiting_choice(uid, True)
         await self._safe_reply(update.message, self._ONBOARDING_PROMPT)
 
     async def _cmd_help(
@@ -308,14 +326,14 @@ class TelegramChannel(BaseChannel):
 
         # \u2500\u2500 Onboarding intercept \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
         # First message from a user \u2192 show the simple wizard.
-        if user_id not in self._welcomed:
-            self._welcomed.add(user_id)
-            self._awaiting_choice.add(user_id)
+        if not await self._has_been_welcomed(user_id):
+            await self._mark_welcomed(user_id)
+            await self._set_awaiting_choice(user_id, True)
             await self._safe_reply(update.message, self._ONBOARDING_PROMPT)
             return
 
         # User is mid-wizard \u2192 parse their answer (or re-prompt).
-        if user_id in self._awaiting_choice:
+        if await self._is_awaiting_choice(user_id):
             reply = self._parse_onboarding_choice(text)
             if reply is None:
                 await self._safe_reply(
@@ -324,7 +342,7 @@ class TelegramChannel(BaseChannel):
                     "or `skip`.",
                 )
                 return
-            self._awaiting_choice.discard(user_id)
+            await self._set_awaiting_choice(user_id, False)
             await self._safe_reply(update.message, reply)
             return
 
@@ -355,3 +373,163 @@ class TelegramChannel(BaseChannel):
             )
 
         await self._safe_reply(update.message, response)
+
+    # ------------------------------------------------------------------
+    # Cron-friendly one-shot tick.
+    #
+    # `tick()` does a single non-blocking getUpdates call, processes
+    # every pending message through the same engine path the long-
+    # running bot uses, sends replies via bot.send_message, and exits.
+    # Designed for `*/N * * * * safestclaw telegram-tick` so the bot
+    # can keep replying (LLM included) when the always-on process
+    # isn't running. Telegram queues unread updates for ~24 hours, so
+    # missed messages get caught up on the next tick.
+    #
+    # IMPORTANT: do NOT run tick alongside the long-polling process.
+    # Telegram serialises getUpdates consumers and returns 409
+    # Conflict if more than one is active at a time.
+    # ------------------------------------------------------------------
+
+    _OFFSET_KEY = "_telegram:offset"
+
+    async def tick(self) -> int:
+        """Poll once, process everything pending, exit.
+
+        Returns the number of updates processed.
+        """
+        if not HAS_TELEGRAM:
+            raise ImportError(
+                "Telegram support not installed. "
+                "Run: pip install safestclaw[telegram]"
+            )
+
+        from telegram import Bot
+
+        bot = Bot(self.token)
+        await bot.initialize()
+        try:
+            offset_raw = await self.engine.memory.get(self._OFFSET_KEY)
+            offset = int(offset_raw) + 1 if offset_raw else 0
+
+            try:
+                updates = await bot.get_updates(
+                    offset=offset,
+                    timeout=0,
+                    allowed_updates=["message", "edited_message"],
+                )
+            except TelegramError as e:
+                logger.error("tick: get_updates failed: %s", e)
+                return 0
+
+            if not updates:
+                logger.debug("tick: no pending updates")
+                return 0
+
+            for upd in updates:
+                try:
+                    await self._tick_handle(bot, upd)
+                except Exception:
+                    logger.exception(
+                        "tick: error handling update %s", upd.update_id
+                    )
+
+            # Persist the highest update_id we've seen so the next tick
+            # picks up where we left off.
+            await self.engine.memory.set(
+                self._OFFSET_KEY, str(updates[-1].update_id)
+            )
+            return len(updates)
+        finally:
+            await bot.shutdown()
+
+    async def _tick_handle(self, bot: Any, update: Any) -> None:
+        """Process a single update outside the PTB Application loop."""
+        if not update.message or not update.effective_user:
+            return
+        msg = update.message
+        chat_id = msg.chat_id
+        user_id = update.effective_user.id
+        text = msg.text or ""
+        no_allowlist = not self.allowed_users
+
+        is_self_register = (
+            no_allowlist
+            and text.strip().lower() == "setup telegram allow me"
+        )
+
+        # Authorization
+        if not is_self_register and not self._is_allowed(user_id):
+            await self._tick_send(
+                bot, chat_id, "Sorry, you're not authorized to use this bot."
+            )
+            return
+
+        # Slash commands
+        stripped = text.strip()
+        if stripped.startswith("/start"):
+            await self._mark_welcomed(user_id)
+            await self._set_awaiting_choice(user_id, True)
+            await self._tick_send(bot, chat_id, self._ONBOARDING_PROMPT)
+            return
+        if stripped.startswith("/help"):
+            await self._tick_send(bot, chat_id, self.engine.get_help())
+            return
+
+        # First-message wizard
+        if not await self._has_been_welcomed(user_id):
+            await self._mark_welcomed(user_id)
+            await self._set_awaiting_choice(user_id, True)
+            await self._tick_send(bot, chat_id, self._ONBOARDING_PROMPT)
+            return
+
+        # Mid-wizard
+        if await self._is_awaiting_choice(user_id):
+            reply = self._parse_onboarding_choice(text)
+            if reply is None:
+                await self._tick_send(
+                    bot, chat_id,
+                    "I didn't catch that \u2014 reply *1* (LLM) or *2* (commands), "
+                    "or `skip`.",
+                )
+                return
+            await self._set_awaiting_choice(user_id, False)
+            await self._tick_send(bot, chat_id, reply)
+            return
+
+        # Engine + LLM
+        try:
+            response = await self.handle_message(text=text, user_id=str(user_id))
+        except Exception as e:
+            logger.exception("tick: engine failed for user %s", user_id)
+            await self._tick_send(
+                bot, chat_id, f"Something went wrong handling that: {e}"
+            )
+            return
+
+        if not response:
+            response = "(no response)"
+        if no_allowlist and not is_self_register:
+            response += (
+                "\n\n\u26a0\ufe0f *Bot is open to anyone.* "
+                "Send `setup telegram allow me` to restrict access to your ID."
+            )
+        await self._tick_send(bot, chat_id, response)
+
+    async def _tick_send(self, bot: Any, chat_id: int, text: str) -> None:
+        """Send with the same Markdown\u2192plain-text fallback as _safe_reply."""
+        if not text:
+            return
+        try:
+            await bot.send_message(
+                chat_id=chat_id, text=text, parse_mode="Markdown",
+            )
+        except TelegramError as e:
+            logger.warning(
+                "tick: Markdown send failed (%s); retrying as plain text", e
+            )
+            try:
+                await bot.send_message(chat_id=chat_id, text=text)
+            except Exception as e2:
+                logger.error("tick: plain-text send also failed: %s", e2)
+        except Exception as e:
+            logger.error("tick: send failed: %s", e)
