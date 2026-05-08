@@ -139,18 +139,19 @@ def _update_config(config_path: Path, provider_config: dict) -> bool:
         providers.append(provider_config)
         config["ai_providers"] = providers
 
-        # Auto-enable LLM-assisted NLU so the configured provider takes
-        # effect across every UI (CLI, web, Telegram, …) without the user
-        # having to flip a separate flag. We only set it when it hasn't
-        # been touched yet, so an explicit `enabled: false` is preserved.
+        # Configuring an LLM provider implies the user wants the LLM to
+        # actually be used, so unconditionally enable NLU. The "preserve
+        # an explicit `enabled: false`" path was too defensive — every
+        # symptom of "I configured a key but the bot still falls back
+        # to canned text" traced back to a stale `enabled: false` left
+        # behind from an earlier default or a manual edit.
         sc = config.get("safestclaw") or {}
         nlu = sc.get("nlu")
         if not isinstance(nlu, dict):
             nlu = {}
-        if "enabled" not in nlu:
-            nlu["enabled"] = True
-            sc["nlu"] = nlu
-            config["safestclaw"] = sc
+        nlu["enabled"] = True
+        sc["nlu"] = nlu
+        config["safestclaw"] = sc
 
         with open(config_path, "w") as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
@@ -213,14 +214,19 @@ def setup_with_key(api_key: str, config_path: Path) -> str:
     if _update_config(config_path, provider_config):
         return (
             f"{openai_warning}\n"
-            f"**Done!** {provider_name.title()} configured.\n\n"
+            f"**Done!** {provider_name.title()} configured and "
+            f"LLM-assisted chat is **on**.\n\n"
             f"Provider: **{provider_name}**\n"
-            f"Model: **{provider['model']}**\n\n"
-            "You can now use AI features:\n"
+            f"Model: **{provider['model']}**\n"
+            f"Config: `{config_path}`\n\n"
+            "You can now chat freely — ask anything, off-topic is fine — "
+            "and use AI features:\n"
             "  `research <topic>` then `research analyze` — AI-powered research\n"
             "  `ai blog generate about technology` — AI blog posts\n"
             "  `code generate <description>` — AI code generation\n\n"
-            "To change models or add more providers, edit config.yaml."
+            "If a follow-up message still falls back to canned replies, "
+            "run `setup ai status` — it'll show whether NLU loaded and "
+            "whether the provider is responding."
         )
 
     return (
@@ -854,11 +860,19 @@ def get_status(config_path: Path | None = None) -> str:
 
     # Check config for cloud providers
     cfg_path = config_path or default_config_path()
+    lines.append(f"**Config file:** `{cfg_path}`")
+
+    nlu_enabled: bool | None = None
+    has_providers = False
     if cfg_path.exists():
         try:
             with open(cfg_path) as f:
                 config = yaml.safe_load(f) or {}
-            providers = config.get("ai_providers", [])
+            providers = config.get("ai_providers", []) or []
+            has_providers = bool(providers)
+            sc = config.get("safestclaw") or {}
+            nlu_cfg = sc.get("nlu") or {}
+            nlu_enabled = bool(nlu_cfg.get("enabled"))
             if providers:
                 lines.append("**Configured providers:**")
                 for p in providers:
@@ -869,8 +883,27 @@ def get_status(config_path: Path | None = None) -> str:
                         endpoint = p.get("endpoint", "cloud")
                         lines.append(f"  {label}: model={model}, key={has_key}, endpoint={endpoint}")
                 lines.append("")
-        except Exception:
-            pass
+        except Exception as e:
+            lines.append(f"_(could not read config: {e})_")
+            lines.append("")
+    else:
+        lines.append("_(config file does not exist yet)_")
+        lines.append("")
+
+    # NLU enablement — this is the single most common reason a configured
+    # provider isn't actually being used for chat.
+    if nlu_enabled is True:
+        lines.append("**LLM-assisted chat (NLU):** enabled ✓")
+    elif nlu_enabled is False and has_providers:
+        lines.append(
+            "**LLM-assisted chat (NLU):** *disabled*  "
+            "— providers are saved but the engine won't route chat to "
+            "them. Re-run `setup ai <your-key>` to flip it on."
+        )
+    elif nlu_enabled is None:
+        lines.append("**LLM-assisted chat (NLU):** not configured")
+
+    lines.append("")
 
     # Check Ollama
     if is_ollama_installed():
@@ -885,7 +918,8 @@ def get_status(config_path: Path | None = None) -> str:
     else:
         lines.append("**Ollama:** not installed")
 
-    if len(lines) == 2:  # Just header + blank
-        lines.append("No AI configured yet. Run `setup ai` to get started.")
+    if not has_providers and nlu_enabled is None:
+        lines.append("")
+        lines.append("No AI configured yet. Run `setup ai <your-key>` to get started.")
 
     return "\n".join(lines)
