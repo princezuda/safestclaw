@@ -319,7 +319,18 @@ class SafestClaw:
                 ttl_seconds=120,  # Remember for 2 minutes
             )
 
-        return await self.conversational.reply(text, user_id or "")
+        # Tests may build SafestClaw via __new__ without going through
+        # __init__; fall back to a static reply when conversational isn't
+        # set up so handle_message stays usable in those harnesses.
+        conv = getattr(self, "conversational", None)
+        if conv is None:
+            return (
+                "I didn't quite catch that. Tell me what you'd like to "
+                "automate — summaries, news, reminders, weather, calendar, "
+                "blogs, briefings, research — and I'll take it from there. "
+                "(Or `/help` for the raw docs.)"
+            )
+        return await conv.reply(text, user_id or "")
 
     async def _handle_chain(
         self,
