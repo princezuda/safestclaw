@@ -133,6 +133,10 @@ class NLUInterpreter:
         self.temperature: float = float(nlu_config.get("temperature", 0.0))
         self.show_translation: bool = nlu_config.get("show_translation", True)
         self._system_prompt: str | None = None  # lazy-built
+        # Captured on the most recent failed call so the engine /
+        # conversational fallback can show the user *why* the LLM
+        # didn't reply, instead of silently dropping to canned text.
+        self.last_error: str | None = None
 
     def _build_system_prompt(self) -> str:
         """Build the system prompt from all known intents and their examples."""
@@ -219,8 +223,14 @@ class NLUInterpreter:
             max_tokens=512,
         )
 
-        if response.error or not response.content.strip():
-            logger.debug(f"NLU question answering failed: {response.error}")
+        if response.error:
+            self.last_error = response.error
+            logger.warning("NLU question answering failed: %s", response.error)
+            return None
+        if not response.content.strip():
+            self.last_error = "the model returned an empty response"
+            logger.warning("NLU question answering returned empty content")
             return None
 
+        self.last_error = None
         return response.content.strip()

@@ -133,15 +133,29 @@ class ConversationalFallback:
         text: str,
         user_id: str,
         has_llm: bool = False,
+        llm_error: str | None = None,
     ) -> str:
         """Return a friendly response for an unparsed message.
 
-        ``has_llm`` lets the caller signal that an LLM/NLU was configured
-        but didn't produce a reply (e.g. provider call failed). When True
-        the orientation line points the user at `setup ai status` so the
-        silent-failure case is debuggable. When False it suggests
-        plugging an LLM in for free-form chat.
+        ``has_llm`` signals that an LLM/NLU was configured but didn't
+        produce a reply for this turn. ``llm_error``, when present, is
+        the actual error message captured from the provider so we can
+        show it to the user instead of silently dropping to canned
+        fallbacks.
         """
+        # When the LLM is configured AND an error fired this turn, lead
+        # with that — it's the most useful thing we can tell the user.
+        # Greeting/thanks/capability replies still come back normally
+        # below since those are useful even when the LLM is down.
+        if has_llm and llm_error:
+            return (
+                f"My LLM didn't reply this turn:\n\n```\n{llm_error}\n```\n\n"
+                f"Run `setup ai status` to check the provider, or "
+                f"`setup ai <new-key>` to swap it. In the meantime I "
+                f"can still handle commands like `summarize <url>`, "
+                f"`news`, `weather <city>`, `remind me to …`."
+            )
+
         if _GREETING.match(text):
             return "Hey 👋 — what would you like me to automate?"
         if _THANKS.match(text):
