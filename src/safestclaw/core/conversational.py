@@ -93,7 +93,7 @@ def _detect_topic(text: str) -> tuple[str, str] | None:
 class ConversationalFallback:
     """Build a chat-friendly reply for messages the parser couldn't match."""
 
-    def __init__(self, memory: "Memory") -> None:
+    def __init__(self, memory: Memory) -> None:
         self.memory = memory
 
     async def reply(self, text: str, user_id: str) -> str:

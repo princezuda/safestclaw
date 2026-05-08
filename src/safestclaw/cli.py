@@ -2,12 +2,13 @@
 SafestClaw CLI - Main entry point.
 
 Usage:
-    safestclaw              # Start interactive CLI
-    safestclaw web          # Start the localhost web UI
-    safestclaw telegram     # Start the Telegram bot
-    safestclaw webhook      # Start webhook server only
-    safestclaw summarize    # Summarize URL or text
-    safestclaw crawl        # Crawl a URL
+    safestclaw                 # Start interactive CLI
+    safestclaw web             # Start the localhost web UI
+    safestclaw telegram        # Start the Telegram bot (long polling)
+    safestclaw telegram-tick   # Process pending Telegram messages once (cron)
+    safestclaw webhook         # Start webhook server only
+    safestclaw summarize       # Summarize URL or text
+    safestclaw crawl           # Crawl a URL
 """
 
 import asyncio
@@ -105,6 +106,31 @@ def _register_telegram_from_config(
             raise typer.Exit(1)
         console.print(f"[yellow]{msg}[/yellow]")
         return False
+
+    # If the user installed a cron / Task Scheduler tick, defer to it.
+    # Telegram serialises getUpdates consumers and would 409 if both ran.
+    # The standalone `safestclaw telegram` command sets required=True and
+    # bypasses this — there we just warn and let the user proceed.
+    try:
+        from safestclaw.core import tick_scheduler
+        sched = tick_scheduler.status()
+    except Exception:
+        sched = None
+    if sched and sched.installed:
+        if required:
+            console.print(
+                "[yellow]Heads up: a scheduled Telegram tick is installed. "
+                "Running long polling at the same time will cause 409 "
+                "Conflicts on every tick. Remove with "
+                "[bold]safestclaw telegram-tick --uninstall[/bold] if you "
+                "want to use long polling exclusively.[/yellow]"
+            )
+        else:
+            console.print(
+                "[dim]Telegram is handled by the scheduled tick "
+                "(safestclaw telegram-tick). Skipping long polling here.[/dim]"
+            )
+            return False
 
     allowed = tg_cfg.get("allowed_users") or None
     engine.register_channel(
@@ -434,6 +460,122 @@ def telegram(
     finally:
         import os
         os._exit(0)
+
+
+@app.command(name="telegram-tick")
+def telegram_tick(
+    config: Path | None = typer.Option(None, "--config", "-c", help="Config file path"),
+    install: bool = typer.Option(
+        False, "--install",
+        help="Register an OS-level schedule (cron / Task Scheduler) so this command runs automatically every --interval minutes.",
+    ),
+    uninstall: bool = typer.Option(
+        False, "--uninstall",
+        help="Remove the previously installed schedule.",
+    ),
+    status: bool = typer.Option(
+        False, "--status",
+        help="Show whether the schedule is currently installed.",
+    ),
+    interval: int = typer.Option(
+        2, "--interval", "-i", min=1,
+        help="Minutes between scheduled ticks when used with --install.",
+    ),
+    verbose: bool = typer.Option(False, "--verbose"),
+):
+    """Process pending Telegram messages once and exit (cron-friendly).
+
+    Designed for cron / Task Scheduler so the bot keeps replying (LLM
+    included) even when the always-on `safestclaw telegram` process
+    isn't running. Telegram queues unread updates for ~24 hours, so
+    missed messages get caught up on the next tick.
+
+    With --install, SafestClaw registers the schedule for you (cron on
+    Linux/macOS, Task Scheduler on Windows). After that the bot keeps
+    replying without you having to run anything.
+
+    Do NOT run this alongside `safestclaw telegram`; Telegram allows
+    only one getUpdates consumer at a time and will return 409 Conflict.
+    """
+    setup_logging(verbose)
+
+    # ── Schedule management ────────────────────────────────────────────
+    if install or uninstall or status:
+        from safestclaw.core import tick_scheduler
+
+        if install:
+            try:
+                result = tick_scheduler.install(interval_minutes=interval)
+            except Exception as e:
+                console.print(f"[red]Could not install schedule: {e}[/red]")
+                raise typer.Exit(1)
+            console.print(
+                f"[green]Scheduled the Telegram tick to run every "
+                f"{interval} minute(s).[/green]"
+            )
+            console.print(f"[dim]{result.detail}[/dim]")
+            console.print(
+                "[yellow]Reminder:[/yellow] don't run [bold]safestclaw "
+                "telegram[/bold] at the same time as the schedule — "
+                "Telegram only allows one getUpdates consumer."
+            )
+            return
+        if uninstall:
+            try:
+                result = tick_scheduler.uninstall()
+            except Exception as e:
+                console.print(f"[red]Could not remove schedule: {e}[/red]")
+                raise typer.Exit(1)
+            console.print(f"[green]{result.detail}[/green]")
+            return
+        if status:
+            result = tick_scheduler.status()
+            label = "installed" if result.installed else "not installed"
+            console.print(f"[bold]Schedule:[/bold] {label}")
+            console.print(f"[dim]{result.detail}[/dim]")
+            return
+
+    # ── One-shot tick ──────────────────────────────────────────────────
+    async def _run() -> int:
+        engine = create_engine(config)
+        engine.load_config()
+        await engine.memory.initialize()
+
+        tg_cfg = (engine.config.get("channels") or {}).get("telegram") or {}
+        token = (tg_cfg.get("token") or "").strip()
+        if not token:
+            console.print(
+                "[red]Telegram token not configured.[/red] "
+                "Run [bold]safestclaw setup[/bold] first."
+            )
+            raise typer.Exit(1)
+
+        try:
+            from safestclaw.channels.telegram import TelegramChannel
+        except ImportError:
+            console.print(
+                "[red]Telegram library missing.[/red] "
+                "Install with: pip install safestclaw[telegram]"
+            )
+            raise typer.Exit(1)
+
+        channel = TelegramChannel(
+            engine, token, allowed_users=tg_cfg.get("allowed_users") or None,
+        )
+        try:
+            n = await channel.tick()
+        finally:
+            await engine.memory.close()
+        return n
+
+    try:
+        n = asyncio.run(_run())
+        if n:
+            console.print(f"[green]Processed {n} update(s).[/green]")
+        else:
+            console.print("[dim]No pending updates.[/dim]")
+    except KeyboardInterrupt:
+        pass
 
 
 @app.command()
@@ -1102,6 +1244,18 @@ def web(
                               help="Bind host (loopback only)"),
     port: int = typer.Option(8771, "--port", "-p", help="Port"),
     token: str = typer.Option("", "--token", help="Optional auth token"),
+    install: bool = typer.Option(
+        False, "--install",
+        help="Register a system service that auto-starts the web UI at login.",
+    ),
+    uninstall: bool = typer.Option(
+        False, "--uninstall",
+        help="Remove the auto-start service.",
+    ),
+    status: bool = typer.Option(
+        False, "--status",
+        help="Show whether the auto-start service is installed.",
+    ),
     config: Path | None = typer.Option(None, "--config", "-c"),
     verbose: bool = typer.Option(False, "--verbose"),
 ):
@@ -1113,8 +1267,43 @@ def web(
     http://127.0.0.1:8771. Telegram auto-starts when enabled in config;
     run other channels via their own commands (safestclaw telegram /
     safestclaw webhook).
+
+    With --install, registers a system service so the web UI comes
+    back automatically at login (systemd user service on Linux,
+    launchd agent on macOS, Task Scheduler at-logon task on Windows).
     """
     setup_logging(verbose)
+
+    # ── Service management ─────────────────────────────────────────────
+    if install or uninstall or status:
+        from safestclaw.core import web_service
+
+        if install:
+            try:
+                result = web_service.install(port=port)
+            except Exception as e:
+                console.print(f"[red]Could not install service: {e}[/red]")
+                raise typer.Exit(1)
+            console.print(
+                f"[green]Web UI auto-start service installed on port "
+                f"{port}.[/green]"
+            )
+            console.print(f"[dim]{result.detail}[/dim]")
+            return
+        if uninstall:
+            try:
+                result = web_service.uninstall()
+            except Exception as e:
+                console.print(f"[red]Could not remove service: {e}[/red]")
+                raise typer.Exit(1)
+            console.print(f"[green]{result.detail}[/green]")
+            return
+        if status:
+            result = web_service.status()
+            label = "installed" if result.installed else "not installed"
+            console.print(f"[bold]Auto-start service:[/bold] {label}")
+            console.print(f"[dim]{result.detail}[/dim]")
+            return
 
     async def _run() -> None:
         engine = create_engine(config)

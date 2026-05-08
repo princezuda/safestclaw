@@ -434,11 +434,27 @@ def _prompt_web_ui(console: Console, config_path: Path) -> None:
     console.print(
         f"[green]Web UI enabled at http://127.0.0.1:{port}[/green]"
     )
-    console.print(
-        "[dim]Run [bold]safestclaw web[/bold] to start it. Other channels "
-        "have their own commands: [bold]safestclaw[/bold] (CLI), "
-        "[bold]safestclaw webhook[/bold], [bold]safestclaw telegram[/bold].[/dim]"
-    )
+
+    # Auto-install the system service so the web UI comes up at login
+    # without anyone running a command. User can opt out later via
+    # `safestclaw web --uninstall`.
+    from safestclaw.core import web_service
+    try:
+        result = web_service.install(port=port)
+        console.print(
+            "[green]Installed an auto-start service — the web UI will "
+            "come up at login.[/green]"
+        )
+        console.print(f"[dim]{result.detail}[/dim]")
+        console.print(
+            "[dim]Remove later with `safestclaw web --uninstall`.[/dim]"
+        )
+    except Exception as e:
+        console.print(
+            f"[yellow]Couldn't auto-install the web service: {e}\n"
+            f"Run [bold]safestclaw web[/bold] manually, or install "
+            f"later with [bold]safestclaw web --install[/bold].[/yellow]"
+        )
 
 
 def _save_telegram_config(
@@ -530,11 +546,29 @@ def _prompt_telegram(console: Console, config_path: Path) -> None:
 
     _save_telegram_config(config_path, token, allowed_users)
     console.print("[green]Telegram bot configured.[/green]")
-    console.print(
-        "[dim]It will start automatically when you run [bold]safestclaw[/bold] "
-        "or [bold]safestclaw web[/bold]. Run [bold]safestclaw telegram[/bold] "
-        "to start it standalone.[/dim]"
-    )
+
+    # Auto-install the cron / Task Scheduler tick so the bot keeps
+    # replying without the user having to keep `safestclaw telegram`
+    # running. Done by default — the user can `safestclaw telegram-tick
+    # --uninstall` later if they don't want it.
+    from safestclaw.core import tick_scheduler
+    try:
+        result = tick_scheduler.install(interval_minutes=2)
+        console.print(
+            "[green]Scheduled the bot to check for messages every 2 "
+            "minutes — replies keep flowing without anything running.[/green]"
+        )
+        console.print(f"[dim]{result.detail}[/dim]")
+        console.print(
+            "[dim]Remove later with `safestclaw telegram-tick --uninstall`."
+            "[/dim]"
+        )
+    except Exception as e:
+        console.print(
+            f"[yellow]Couldn't auto-schedule the tick: {e}\n"
+            f"You can install it later with "
+            f"[bold]safestclaw telegram-tick --install[/bold].[/yellow]"
+        )
 
 
 def _save_fastmcp_config(
