@@ -45,3 +45,9 @@ jobs:
 
       - name: Publish via PyPI Trusted Publishing
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # If the tag was created on a commit whose version was
+          # already published (e.g. a tag pointing at the wrong sha),
+          # let the workflow succeed instead of failing on the 400 —
+          # PyPI files are immutable and there's nothing to do.
+          skip-existing: true
