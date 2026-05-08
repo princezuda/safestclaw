@@ -418,6 +418,17 @@ class TelegramChannel(BaseChannel):
                     allowed_updates=["message", "edited_message"],
                 )
             except TelegramError as e:
+                # 409 Conflict means another consumer (e.g. the long-
+                # polling `safestclaw telegram` process) owns the
+                # session. Treat it as "nothing to do this tick" so the
+                # cron schedule doesn't spam errors.
+                msg = str(e)
+                if "Conflict" in msg or "409" in msg:
+                    logger.debug(
+                        "tick: another getUpdates consumer is active; "
+                        "skipping this tick"
+                    )
+                    return 0
                 logger.error("tick: get_updates failed: %s", e)
                 return 0
 

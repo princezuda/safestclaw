@@ -536,6 +536,43 @@ def _prompt_telegram(console: Console, config_path: Path) -> None:
         "to start it standalone.[/dim]"
     )
 
+    # Offer to install a scheduled tick so the bot keeps replying when
+    # the always-on process isn't running. Skipped on platforms where
+    # cron / Task Scheduler isn't available.
+    console.print()
+    console.print(
+        "[bold]Keep replying when the app is off?[/bold]\n"
+        "I can register an OS-level schedule (cron on Linux/macOS, "
+        "Task Scheduler on Windows) that processes pending Telegram "
+        "messages every couple of minutes — so the bot keeps replying "
+        "(LLM included) even when [bold]safestclaw telegram[/bold] "
+        "isn't running."
+    )
+    if Confirm.ask(
+        "Install the scheduled tick now?", default=True, console=console,
+    ):
+        interval = IntPrompt.ask(
+            "Minutes between ticks", default=2, console=console,
+        )
+        from safestclaw.core import tick_scheduler
+        try:
+            result = tick_scheduler.install(interval_minutes=interval)
+            console.print(
+                f"[green]Scheduled — every {interval} minute(s).[/green]"
+            )
+            console.print(f"[dim]{result.detail}[/dim]")
+            console.print(
+                "[yellow]Don't run `safestclaw telegram` at the same time "
+                "as the schedule — only one getUpdates consumer is allowed."
+                "[/yellow]"
+            )
+        except Exception as e:
+            console.print(
+                f"[yellow]Could not install schedule automatically: {e}\n"
+                f"You can do it later with "
+                f"[bold]safestclaw telegram-tick --install[/bold].[/yellow]"
+            )
+
 
 def _save_fastmcp_config(
     config_path: Path,

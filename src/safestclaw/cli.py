@@ -440,24 +440,77 @@ def telegram(
 @app.command(name="telegram-tick")
 def telegram_tick(
     config: Path | None = typer.Option(None, "--config", "-c", help="Config file path"),
+    install: bool = typer.Option(
+        False, "--install",
+        help="Register an OS-level schedule (cron / Task Scheduler) so this command runs automatically every --interval minutes.",
+    ),
+    uninstall: bool = typer.Option(
+        False, "--uninstall",
+        help="Remove the previously installed schedule.",
+    ),
+    status: bool = typer.Option(
+        False, "--status",
+        help="Show whether the schedule is currently installed.",
+    ),
+    interval: int = typer.Option(
+        2, "--interval", "-i", min=1,
+        help="Minutes between scheduled ticks when used with --install.",
+    ),
     verbose: bool = typer.Option(False, "--verbose"),
 ):
     """Process pending Telegram messages once and exit (cron-friendly).
 
-    Designed for cron/Task Scheduler so the bot keeps replying (LLM
+    Designed for cron / Task Scheduler so the bot keeps replying (LLM
     included) even when the always-on `safestclaw telegram` process
     isn't running. Telegram queues unread updates for ~24 hours, so
     missed messages get caught up on the next tick.
 
-    Example crontab entry (every 2 minutes):
-
-        */2 * * * * /usr/bin/safestclaw telegram-tick
+    With --install, SafestClaw registers the schedule for you (cron on
+    Linux/macOS, Task Scheduler on Windows). After that the bot keeps
+    replying without you having to run anything.
 
     Do NOT run this alongside `safestclaw telegram`; Telegram allows
     only one getUpdates consumer at a time and will return 409 Conflict.
     """
     setup_logging(verbose)
 
+    # ── Schedule management ────────────────────────────────────────────
+    if install or uninstall or status:
+        from safestclaw.core import tick_scheduler
+
+        if install:
+            try:
+                result = tick_scheduler.install(interval_minutes=interval)
+            except Exception as e:
+                console.print(f"[red]Could not install schedule: {e}[/red]")
+                raise typer.Exit(1)
+            console.print(
+                f"[green]Scheduled the Telegram tick to run every "
+                f"{interval} minute(s).[/green]"
+            )
+            console.print(f"[dim]{result.detail}[/dim]")
+            console.print(
+                "[yellow]Reminder:[/yellow] don't run [bold]safestclaw "
+                "telegram[/bold] at the same time as the schedule — "
+                "Telegram only allows one getUpdates consumer."
+            )
+            return
+        if uninstall:
+            try:
+                result = tick_scheduler.uninstall()
+            except Exception as e:
+                console.print(f"[red]Could not remove schedule: {e}[/red]")
+                raise typer.Exit(1)
+            console.print(f"[green]{result.detail}[/green]")
+            return
+        if status:
+            result = tick_scheduler.status()
+            label = "installed" if result.installed else "not installed"
+            console.print(f"[bold]Schedule:[/bold] {label}")
+            console.print(f"[dim]{result.detail}[/dim]")
+            return
+
+    # ── One-shot tick ──────────────────────────────────────────────────
     async def _run() -> int:
         engine = create_engine(config)
         engine.load_config()
