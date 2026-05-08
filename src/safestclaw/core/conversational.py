@@ -80,6 +80,38 @@ _THANKS = re.compile(
     r"^\s*(thanks|thank\s+you|thx|ty|cheers|appreciate it)\b",
     re.IGNORECASE,
 )
+# "what are you capable of?" / "what can you do?" / "explain what you do"
+# style — the user is explicitly asking for a capability summary, so we
+# always answer with one (no once-per-user gating).
+_WANTS_CAPABILITIES = re.compile(
+    r"\b("
+    r"what (can|do) you (do|automate|help|offer)|"
+    r"capable of|"
+    r"what are your (capabilities|features|skills)|"
+    r"explain (what you (do|can do)|yourself)|"
+    r"tell me what you (do|can do)|"
+    r"what is your (capability|purpose)|"
+    r"who are you|what are you"
+    r")\b",
+    re.IGNORECASE,
+)
+_CAPABILITY_SUMMARY = (
+    "Here's what I can automate today:\n\n"
+    "  • **Summarize** an article or page from a URL\n"
+    "  • **News** — RSS headlines by topic\n"
+    "  • **Weather** for any city\n"
+    "  • **Reminders** at a time you pick\n"
+    "  • **Calendar** — read your `.ics` file or CalDAV\n"
+    "  • **Briefing** — your daily digest\n"
+    "  • **Crawl** — fetch a page and extract its links\n"
+    "  • **Research** — Wikipedia / arXiv / Wolfram lookups\n"
+    "  • **Blog** — assemble or publish posts\n"
+    "  • **Email** — read or send (when configured)\n"
+    "  • **Security scans** — bandit / pip-audit / trivy / etc.\n\n"
+    "Just ask in plain language — *\"summarize this URL\"*, *\"news tech\"*, "
+    "*\"remind me to call mom at 3pm\"*. For free-form chat plug in an LLM "
+    "with `setup ai <your-key>` (or `setup ai local` for free local Ollama)."
+)
 
 
 def _detect_topic(text: str) -> tuple[str, str] | None:
@@ -102,6 +134,11 @@ class ConversationalFallback:
             return "Hey 👋 — what would you like me to automate?"
         if _THANKS.match(text):
             return "Anytime."
+
+        # Capability questions get the full summary every time — the
+        # user is explicitly asking, so don't gate it once-per-user.
+        if _WANTS_CAPABILITIES.search(text):
+            return _CAPABILITY_SUMMARY
 
         topic_match = _detect_topic(text)
         if topic_match:

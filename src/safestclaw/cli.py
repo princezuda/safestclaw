@@ -3,6 +3,8 @@ SafestClaw CLI - Main entry point.
 
 Usage:
     safestclaw                 # Start interactive CLI
+    safestclaw up              # Turn on web + Telegram, install auto-start
+    safestclaw down            # Uninstall auto-start for web + Telegram
     safestclaw web             # Start the localhost web UI
     safestclaw telegram        # Start the Telegram bot (long polling)
     safestclaw telegram-tick   # Process pending Telegram messages once (cron)
@@ -171,7 +173,12 @@ def create_engine(config_path: Path | None = None) -> SafestClaw:
     engine.register_action("blog", blog_action.execute)
     engine.register_action("research", research_action.execute)
     engine.register_action("code", code_action.execute)
-    engine.register_action("help", lambda **_: engine.get_help())
+    # The chat-driven `help` intent ("help", "what can you do", …) gets
+    # the friendly conversational capability summary. The explicit `/help`
+    # paths (Telegram /help, web /api/help, CLI `safestclaw --help`) keep
+    # rendering the raw `engine.get_help()` dump.
+    from safestclaw.core.conversational import _CAPABILITY_SUMMARY
+    engine.register_action("help", lambda **_: _CAPABILITY_SUMMARY)
 
     # Register style profile action (fuzzy learning)
     engine.register_action("style", _style_action)
@@ -1236,6 +1243,141 @@ def setup(
     setup_logging(verbose)
     config_path = config or Path("config/config.yaml")
     asyncio.run(run_wizard(config_path, console))
+
+
+@app.command()
+def up(
+    config: Path | None = typer.Option(None, "--config", "-c", help="Config file path"),
+    verbose: bool = typer.Option(False, "--verbose"),
+):
+    """Bring up web UI + Telegram bot and install auto-start for both.
+
+    Idempotent — installs the OS auto-start service for the web UI (if
+    web is enabled in config) and the cron / Task Scheduler tick for
+    Telegram (if a token is configured), then drains any pending
+    Telegram messages on the spot. Both keep running after this command
+    exits — web at next login, Telegram every two minutes via the
+    schedule. Use `safestclaw down` to undo.
+    """
+    setup_logging(verbose)
+
+    async def _run() -> None:
+        engine = create_engine(config)
+        engine.load_config()
+        await engine.memory.initialize()
+
+        try:
+            from safestclaw.core import tick_scheduler, web_service
+
+            # ── Web UI ─────────────────────────────────────────────────
+            web_cfg = (engine.config.get("channels") or {}).get("web") or {}
+            if web_cfg.get("enabled"):
+                port = int(web_cfg.get("port", 8771))
+                if web_service.status().installed:
+                    console.print(
+                        f"[dim]Web UI auto-start already installed (port {port}).[/dim]"
+                    )
+                else:
+                    try:
+                        result = web_service.install(port=port)
+                        console.print(
+                            f"[green]Web UI auto-start installed on port {port}.[/green]"
+                        )
+                        console.print(f"[dim]{result.detail}[/dim]")
+                    except Exception as e:
+                        console.print(f"[yellow]Web service install failed: {e}[/yellow]")
+                console.print(f"  [bold]→[/bold] http://127.0.0.1:{port}")
+            else:
+                console.print(
+                    "[yellow]Web UI not enabled in config.[/yellow] "
+                    "Run [bold]safestclaw setup[/bold] to enable it."
+                )
+
+            # ── Telegram bot ──────────────────────────────────────────
+            tg_cfg = (engine.config.get("channels") or {}).get("telegram") or {}
+            tg_token = (tg_cfg.get("token") or "").strip()
+            if tg_token:
+                if tick_scheduler.status().installed:
+                    console.print("[dim]Telegram tick already scheduled.[/dim]")
+                else:
+                    try:
+                        result = tick_scheduler.install(interval_minutes=2)
+                        console.print(
+                            "[green]Telegram tick scheduled (every 2 minutes).[/green]"
+                        )
+                        console.print(f"[dim]{result.detail}[/dim]")
+                    except Exception as e:
+                        console.print(f"[yellow]Telegram tick install failed: {e}[/yellow]")
+
+                # Drain pending updates immediately so the user doesn't
+                # wait for the first cron firing.
+                try:
+                    from safestclaw.channels.telegram import TelegramChannel
+                    ch = TelegramChannel(
+                        engine, tg_token,
+                        allowed_users=tg_cfg.get("allowed_users") or None,
+                    )
+                    n = await ch.tick()
+                    if n:
+                        console.print(f"  [bold]→[/bold] caught up {n} pending message(s)")
+                except ImportError:
+                    console.print(
+                        "[yellow]Telegram library missing.[/yellow] "
+                        "Install with: pip install safestclaw[telegram]"
+                    )
+                except Exception as e:
+                    console.print(
+                        f"[dim]Telegram catch-up skipped ({e}); "
+                        f"the next scheduled tick will retry.[/dim]"
+                    )
+            else:
+                console.print(
+                    "[yellow]Telegram token not configured.[/yellow] "
+                    "Run [bold]safestclaw setup[/bold] to enable it."
+                )
+
+            console.print()
+            console.print(
+                "[bold green]SafestClaw is up.[/bold green] "
+                "Both will keep running after you close this terminal."
+            )
+        finally:
+            await engine.memory.close()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        pass
+
+
+@app.command()
+def down(
+    verbose: bool = typer.Option(False, "--verbose"),
+):
+    """Stop and uninstall auto-start for web UI + Telegram tick.
+
+    Reverses what `safestclaw up` did. Configuration in config.yaml
+    is left untouched — only the OS-level scheduled tasks / services
+    are removed. Run `safestclaw up` again to bring everything back.
+    """
+    setup_logging(verbose)
+
+    from safestclaw.core import tick_scheduler, web_service
+
+    try:
+        result = web_service.uninstall()
+        console.print(f"[green]Web: {result.detail}[/green]")
+    except Exception as e:
+        console.print(f"[yellow]Web uninstall failed: {e}[/yellow]")
+
+    try:
+        result = tick_scheduler.uninstall()
+        console.print(f"[green]Telegram: {result.detail}[/green]")
+    except Exception as e:
+        console.print(f"[yellow]Telegram uninstall failed: {e}[/yellow]")
+
+    console.print()
+    console.print("[bold]SafestClaw is down.[/bold]")
 
 
 @app.command()

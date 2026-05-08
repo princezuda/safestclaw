@@ -1135,7 +1135,12 @@ class CommandParser:
         self.intents[pattern.intent] = pattern
         logger.debug(f"Registered intent: {pattern.intent}")
 
-    def parse(self, text: str, user_id: str | None = None) -> ParsedCommand:
+    def parse(
+        self,
+        text: str,
+        user_id: str | None = None,
+        strict: bool = False,
+    ) -> ParsedCommand:
         """
         Parse user input into a structured command.
 
@@ -1169,9 +1174,13 @@ class CommandParser:
                 logger.debug(f"Matched learned pattern: '{text}' -> {result.intent}")
                 return result
 
-        # 2. Check phrase variations (fuzzy match against common phrases)
+        # 2. Check phrase variations (fuzzy match against common phrases).
+        # In strict mode we still run this (for the substring branch) but
+        # require a higher confidence so only verbatim substring matches
+        # — never the fuzzy fallback — succeed.
         phrase_match = self._match_phrase_variations(normalized)
-        if phrase_match and phrase_match[1] >= 0.85:
+        phrase_threshold = 0.92 if strict else 0.85
+        if phrase_match and phrase_match[1] >= phrase_threshold:
             result.intent = phrase_match[0]
             result.confidence = phrase_match[1]
 
@@ -1181,7 +1190,7 @@ class CommandParser:
             return result
 
         # 3. Fall back to keyword/pattern matching
-        best_match = self._match_keywords(normalized)
+        best_match = self._match_keywords(normalized, strict=strict)
 
         if best_match:
             result.intent = best_match[0]
@@ -1194,12 +1203,20 @@ class CommandParser:
 
         return result
 
-    def _match_keywords(self, text: str) -> tuple[str, float] | None:
+    def _match_keywords(
+        self, text: str, strict: bool = False,
+    ) -> tuple[str, float] | None:
         """Match text against intent keywords using fuzzy matching.
 
         Keyword specificity (length relative to input) is factored into the
         score so that longer, more-specific keyword matches beat shorter
         substring hits (e.g. "nachrichten" beats "nachricht").
+
+        ``strict=True`` disables the fuzzy fallback layer, leaving only
+        exact substring matches and regex patterns. Used by the engine
+        when an LLM-based NLU is configured — anything the rule-based
+        layer can't match with high confidence routes to the LLM
+        instead of risking a wrong-intent hijack.
         """
         best_intent = None
         best_score = 0.0
@@ -1220,12 +1237,23 @@ class CommandParser:
                         best_intent = intent_name
                     continue
 
-                # Fuzzy match against words
-                for word in words:
-                    ratio = fuzz.ratio(keyword, word) / 100.0
-                    if ratio > 0.8 and ratio > best_score:
-                        best_score = ratio
-                        best_intent = intent_name
+                # Fuzzy match against words. Skip when either side is too
+                # short — a 1-char edit between a 4-letter keyword and a
+                # 3-letter common word (e.g. "scan" vs "can", "blog" vs
+                # "log", "code" vs "core") clears the 0.8 threshold and
+                # routes everyday English into a wrong intent. Below
+                # length 5, require an exact substring/word match instead
+                # (already handled above), and bump the fuzzy threshold
+                # for the longer keywords that survive. In strict mode
+                # (LLM-on), skip the fuzzy layer entirely.
+                if not strict and len(keyword) >= 5:
+                    for word in words:
+                        if len(word) < 5:
+                            continue
+                        ratio = fuzz.ratio(keyword, word) / 100.0
+                        if ratio > 0.85 and ratio > best_score:
+                            best_score = ratio
+                            best_intent = intent_name
 
             # Check regex patterns
             for regex in pattern.patterns:
@@ -1339,12 +1367,17 @@ class CommandParser:
                         best_intent = intent
                     continue
 
-                # Fuzzy match - require text to be at least 70% as long as
-                # phrase to prevent short inputs matching inside long phrases
-                # (e.g. "help" perfectly matching inside "blog help").
+                # Fuzzy match — use full-string fuzz.ratio rather than
+                # partial_ratio. partial_ratio would happily match
+                # "tell me to" against "tell me a joke" (the shared
+                # "tell me " prefix gives 0.89), routing unrelated input
+                # to the reminder intent. The substring case above
+                # already covers verbatim matches; we only need fuzzy
+                # for typos in the phrase itself, which fuzz.ratio
+                # captures well at a 0.9 threshold.
                 if len(text) >= len(phrase) * 0.7:
-                    ratio = fuzz.partial_ratio(phrase, text) / 100.0
-                    if ratio > 0.85 and ratio > best_score:
+                    ratio = fuzz.ratio(phrase, text) / 100.0
+                    if ratio > 0.9 and ratio > best_score:
                         best_score = ratio
                         best_intent = intent
 
