@@ -1,6 +1,6 @@
 [project]
 name = "safestclaw"
-version = "4.2.2"
+version = "4.2.4"
 description = "A privacy-first personal automation assistant - no GenAI required, optional AI for blogging, research, and coding"
 readme = "README.md"
 license = "MIT"
