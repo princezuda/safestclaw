@@ -91,7 +91,17 @@ class SafestClaw:
         self._load_nlu()
 
     def _load_nlu(self) -> None:
-        """Initialise the optional LLM NLU bridge if enabled in config."""
+        """Initialise the optional LLM NLU bridge if enabled in config.
+
+        Resets ``self.nlu`` on every call so a config reload that flips
+        the flag off (or breaks the provider) actually drops the prior
+        NLU instance instead of silently keeping a stale one in place.
+        """
+        # Always start from None — covers both "config flipped off" and
+        # "init failed this round". Anything below that *should* set it
+        # writes through this clean slate.
+        self.nlu = None
+
         sc = self.config.get("safestclaw", {})
         nlu_cfg = sc.get("nlu", {})
         if not nlu_cfg.get("enabled", False):
@@ -99,7 +109,10 @@ class SafestClaw:
 
         ai_cfg = self.config.get("ai_providers")
         if not ai_cfg:
-            logger.warning("NLU enabled but no ai_providers configured — NLU disabled.")
+            logger.warning(
+                "NLU enabled but no ai_providers configured — NLU disabled. "
+                "Run `setup ai <your-key>` to add a provider."
+            )
             return
 
         try:
@@ -109,7 +122,12 @@ class SafestClaw:
             self.nlu = NLUInterpreter(ai_writer, self.parser, nlu_cfg)
             logger.info("NLU bridge enabled (LLM-assisted command understanding).")
         except Exception as e:
-            logger.warning(f"NLU initialisation failed: {e}")
+            # Full traceback at WARNING so the user can find the cause
+            # via `safestclaw --verbose`. Previously we logged just the
+            # message string, which made silent NLU init failures
+            # impossible to diagnose.
+            logger.warning("NLU initialisation failed: %s", e, exc_info=True)
+            self.nlu = None
 
     def _load_languages(self) -> None:
         """Load multilingual command support from config.

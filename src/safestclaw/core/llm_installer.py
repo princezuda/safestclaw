@@ -125,26 +125,22 @@ def _update_config(config_path: Path, provider_config: dict) -> bool:
         if providers is None:
             providers = []
 
-        # Check if this provider already exists and update it
+        # Insert or replace the provider by label.
         label = provider_config.get("label", "")
         for i, p in enumerate(providers):
             if isinstance(p, dict) and p.get("label") == label:
                 providers[i] = provider_config
-                config["ai_providers"] = providers
-                with open(config_path, "w") as f:
-                    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-                return True
-
-        # Add new provider
-        providers.append(provider_config)
+                break
+        else:
+            providers.append(provider_config)
         config["ai_providers"] = providers
 
         # Configuring an LLM provider implies the user wants the LLM to
-        # actually be used, so unconditionally enable NLU. The "preserve
-        # an explicit `enabled: false`" path was too defensive — every
-        # symptom of "I configured a key but the bot still falls back
-        # to canned text" traced back to a stale `enabled: false` left
-        # behind from an earlier default or a manual edit.
+        # actually be used, so unconditionally enable NLU. Runs on BOTH
+        # the insert and the update branch — earlier the update branch
+        # short-circuited and left `nlu.enabled: false` (or absent) in
+        # place, which is why `setup ai` was a silent no-op for users
+        # whose first run had ever written the disabled flag.
         sc = config.get("safestclaw") or {}
         nlu = sc.get("nlu")
         if not isinstance(nlu, dict):
