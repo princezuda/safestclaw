@@ -1,0 +1,118 @@
+name: Release
+
+# One-click release: bump pyproject.toml + __init__.py to the version
+# you type below, commit on main, tag that commit, build, publish to
+# PyPI. Avoids the recurring "tag points at the wrong commit, PyPI
+# rejects the duplicate filename" footgun by tagging only the commit
+# this workflow just made.
+#
+# Trigger from the GitHub Actions UI:
+#   Actions → Release → Run workflow → enter "4.2.5" → Run.
+#
+# PyPI trusted publishing must list this workflow filename
+# (`release.yml`) for the project. If you already have `publish.yml`
+# registered, add `release.yml` as a second trusted publisher in the
+# same project settings on PyPI (Manage → Publishing).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version (e.g. 4.2.5) — must not collide with an existing tag"
+        required: true
+        type: string
+
+# Don't release twice in parallel — the second one would race on the
+# bump commit and produce a confusing history.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # bump commit + tag push
+  id-token: write   # PyPI trusted publishing
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate version format
+        run: |
+          v="${{ inputs.version }}"
+          if [[ ! "$v" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(\.[0-9]+)?$ ]]; then
+            echo "::error::'$v' is not a valid X.Y, X.Y.Z, or X.Y.Z.W version"
+            exit 1
+          fi
+
+      - name: Verify tag does not already exist
+        run: |
+          v="${{ inputs.version }}"
+          if git rev-parse "refs/tags/$v" >/dev/null 2>&1; then
+            echo "::error::Tag '$v' already exists. Pick a higher version."
+            exit 1
+          fi
+
+      - name: Bump version files
+        run: |
+          python - <<'PY'
+          import re, sys, os
+          version = os.environ["NEW_VERSION"]
+
+          def bump(path: str, pattern: str, repl: str) -> None:
+              src = open(path).read()
+              new, n = re.subn(pattern, repl, src, count=1, flags=re.MULTILINE)
+              if n == 0:
+                  print(f"::error::Could not find version line in {path}")
+                  sys.exit(1)
+              open(path, "w").write(new)
+              print(f"  {path} → {version}")
+
+          bump(
+              "pyproject.toml",
+              r'^version\s*=\s*".*?"',
+              f'version = "{version}"',
+          )
+          bump(
+              "src/safestclaw/__init__.py",
+              r'^__version__\s*=\s*".*?"',
+              f'__version__ = "{version}"',
+          )
+          PY
+        env:
+          NEW_VERSION: ${{ inputs.version }}
+
+      - name: Commit, tag, push
+        run: |
+          v="${{ inputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml src/safestclaw/__init__.py
+          git commit -m "release: $v"
+          git tag "$v"
+          git push origin main
+          git push origin "$v"
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Same belt-and-suspenders as publish.yml: a re-run against
+          # an already-published filename is a soft no-op rather than
+          # a 400 error.
+          skip-existing: true
