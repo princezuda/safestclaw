@@ -52,6 +52,11 @@ actions:
     enabled: true
     sandboxed: true
     timeout: 30
+    # Hard-block interpreters/command-runners (sh, python, env, ...) even if
+    # they appear in allowed_commands. Leave true unless you deliberately
+    # need an interpreter and accept the risk.
+    enforce_never_allow: true
+    # allowed_commands: [ls, cat, git]   # optional custom allowlist
   files:
     enabled: true
     allowed_paths:

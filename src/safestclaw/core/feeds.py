@@ -11,11 +11,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from html import unescape
 from typing import Any
+from urllib.parse import urljoin
 
 import feedparser
 import httpx
 
-from safestclaw.core.crawler import Crawler
+from safestclaw.core.crawler import Crawler, is_safe_url
 from safestclaw.core.summarizer import Summarizer, SummaryMethod
 
 logger = logging.getLogger(__name__)
@@ -118,6 +119,9 @@ class FeedReader:
     - Preset feed categories
     """
 
+    # Cap on redirects to follow when validating each hop for SSRF.
+    MAX_REDIRECTS = 5
+
     def __init__(
         self,
         cache_ttl: int = 1800,  # 30 minutes
@@ -175,15 +179,63 @@ class FeedReader:
 
         items: list[FeedItem] = []
 
+        # SSRF protection: never fetch a feed URL that resolves to an
+        # internal/private address or uses a non-HTTP scheme. RSS URLs are
+        # user-supplied (custom feeds), so this is an attacker-controlled
+        # input that could otherwise reach cloud metadata endpoints,
+        # localhost services, or read local files via file://.
+        safe, reason = is_safe_url(feed.url)
+        if not safe:
+            logger.warning(
+                f"Blocked SSRF attempt for feed {feed.name}: "
+                f"{feed.url} - {reason}"
+            )
+            # Cache the empty result so a malicious URL isn't retried on
+            # every request.
+            self._cache[cache_key] = ([], datetime.now())
+            return []
+
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            # follow_redirects=False so we can validate every redirect hop
+            # ourselves — otherwise a public URL could 30x-redirect into an
+            # internal address and bypass the check above.
+            async with httpx.AsyncClient(
+                timeout=self.timeout, follow_redirects=False
+            ) as client:
                 headers = {}
                 if feed.etag:
                     headers["If-None-Match"] = feed.etag
                 if feed.modified:
                     headers["If-Modified-Since"] = feed.modified
 
-                response = await client.get(feed.url, headers=headers)
+                current_url = feed.url
+                response = None
+                for _ in range(self.MAX_REDIRECTS + 1):
+                    response = await client.get(current_url, headers=headers)
+                    if response.status_code in (301, 302, 303, 307, 308):
+                        location = response.headers.get("location")
+                        if not location:
+                            logger.warning(
+                                f"Feed {feed.name}: redirect with no Location"
+                            )
+                            return []
+                        redirect_url = urljoin(current_url, location)
+                        redirect_safe, redirect_reason = is_safe_url(redirect_url)
+                        if not redirect_safe:
+                            logger.warning(
+                                f"Blocked SSRF redirect for feed {feed.name}: "
+                                f"{current_url} -> {redirect_url} "
+                                f"- {redirect_reason}"
+                            )
+                            return []
+                        current_url = redirect_url
+                        continue
+                    break
+                else:
+                    logger.warning(
+                        f"Feed {feed.name}: too many redirects"
+                    )
+                    return []
 
                 # Not modified
                 if response.status_code == 304:
@@ -293,7 +345,17 @@ class FeedReader:
         url: str,
         category: str = "custom",
     ) -> Feed:
-        """Add a custom RSS feed."""
+        """
+        Add a custom RSS feed.
+
+        Raises:
+            ValueError: if the URL is unsafe (non-HTTP scheme or resolves to
+                an internal/private address). This stops a malicious feed URL
+                from ever being persisted and fetched later.
+        """
+        safe, reason = is_safe_url(url)
+        if not safe:
+            raise ValueError(f"Refusing to add feed with unsafe URL: {reason}")
         feed = Feed(name=name, url=url, category=category)
         self.custom_feeds.append(feed)
         return feed

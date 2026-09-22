@@ -222,7 +222,10 @@ class NewsAction(BaseAction):
             return f"Could not fetch any items from {url}. Is it a valid RSS feed?"
 
         # Add to custom feeds
-        self.feed_reader.add_custom_feed(name, url)
+        try:
+            self.feed_reader.add_custom_feed(name, url)
+        except ValueError as e:
+            return f"❌ {e}"
         await self._save_user_prefs(user_id, engine)
 
         return f"✅ Added custom feed: **{name}**\n   {url}\n   Found {len(items)} items"

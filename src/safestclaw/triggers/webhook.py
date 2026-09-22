@@ -95,11 +95,18 @@ class WebhookServer:
         self,
         host: str = "127.0.0.1",
         port: int = 8765,
+        max_body_bytes: int = 1_048_576,
+        max_queue_size: int = 1000,
     ):
         self.host = host
         self.port = port
+        self.max_body_bytes = max_body_bytes
         self.handlers: dict[str, WebhookHandler] = {}
-        self.event_queue: asyncio.Queue[WebhookEvent] = asyncio.Queue()
+        # Bounded queue so a flood of inbound events can't exhaust memory if
+        # nothing is draining it. put_nowait raises QueueFull past the cap.
+        self.event_queue: asyncio.Queue[WebhookEvent] = asyncio.Queue(
+            maxsize=max(1, max_queue_size)
+        )
 
         self.app = FastAPI(
             title="SafestClaw Webhooks",
@@ -117,9 +124,11 @@ class WebhookServer:
 
         @self.app.get("/webhooks")
         async def list_webhooks():
+            # Deliberately does NOT expose has_secret — don't advertise which
+            # endpoints are unauthenticated to an unauthenticated caller.
             return {
                 "webhooks": [
-                    {"name": name, "action": h.action, "has_secret": bool(h.secret)}
+                    {"name": name, "action": h.action}
                     for name, h in self.handlers.items()
                 ]
             }
@@ -138,8 +147,15 @@ class WebhookServer:
 
             handler = self.handlers[name]
 
-            # Get raw body for signature verification
-            body = await request.body()
+            # Read the body with a hard size cap so an oversized (or chunked,
+            # Content-Length-spoofing) payload can't buffer unbounded memory.
+            body = b""
+            async for chunk in request.stream():
+                body += chunk
+                if len(body) > self.max_body_bytes:
+                    raise HTTPException(
+                        status_code=413, detail="Payload too large"
+                    )
 
             # Verify signature
             signature = x_hub_signature_256 or x_gitlab_token or x_slack_signature
@@ -167,8 +183,19 @@ class WebhookServer:
                 verified=verified,
             )
 
-            # Queue event for processing
-            await self.event_queue.put(event)
+            # Queue event for processing. Never block the request on a full
+            # queue — shed load with 503 instead so a flood can't pin the
+            # server or grow memory without bound.
+            try:
+                self.event_queue.put_nowait(event)
+            except asyncio.QueueFull:
+                logger.warning(
+                    f"Webhook queue full; dropping event for {name} "
+                    f"from {event.source_ip}"
+                )
+                raise HTTPException(
+                    status_code=503, detail="Server busy, try again later"
+                )
 
             logger.info(f"Received webhook: {name} from {event.source_ip}")
 

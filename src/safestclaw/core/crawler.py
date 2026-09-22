@@ -50,6 +50,13 @@ def is_safe_url(url: str) -> tuple[bool, str]:
     """
     try:
         parsed = urlparse(url)
+
+        # Only http/https may be fetched. This blocks file://, gopher://,
+        # dict://, ftp://, etc. which are classic SSRF/local-file vectors.
+        scheme = (parsed.scheme or "").lower()
+        if scheme not in ("http", "https"):
+            return False, f"Blocked non-HTTP scheme: {parsed.scheme or '(none)'}"
+
         hostname = parsed.hostname
 
         if not hostname:

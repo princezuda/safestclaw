@@ -126,7 +126,16 @@ def create_engine(config_path: Path | None = None) -> SafestClaw:
 
     # Register default actions
     files_action = FilesAction()
-    shell_action = ShellAction()
+    _shell_cfg = (engine.config.get("actions") or {}).get("shell") or {}
+    shell_action = ShellAction(
+        enabled=_shell_cfg.get("enabled", True),
+        sandboxed=_shell_cfg.get("sandboxed", True),
+        allowed_commands=_shell_cfg.get("allowed_commands"),
+        working_directory=_shell_cfg.get("working_directory"),
+        # Defaults to True (interpreters/command-runners hard-blocked).
+        # Set actions.shell.enforce_never_allow: false to opt out.
+        enforce_never_allow=_shell_cfg.get("enforce_never_allow", True),
+    )
     summarize_action = SummarizeAction()
     crawl_action = CrawlAction()
     reminder_action = ReminderAction()
@@ -651,7 +660,11 @@ async def _crawl(
 @app.command()
 def webhook(
     port: int = typer.Option(8765, "--port", "-p", help="Port to listen on"),
-    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Host to bind to"),
+    host: str = typer.Option(
+        "127.0.0.1", "--host", "-h",
+        help="Host to bind to. Defaults to loopback; use 0.0.0.0 only "
+             "behind a reverse proxy / firewall you control.",
+    ),
     verbose: bool = typer.Option(False, "--verbose"),
 ):
     """Start the webhook server only."""
@@ -731,7 +744,11 @@ async def _news(
     if add_feed:
         name = feed_name or "Custom Feed"
         console.print(f"[dim]Fetching feed: {add_feed}...[/dim]")
-        feed_reader.add_custom_feed(name, add_feed)
+        try:
+            feed_reader.add_custom_feed(name, add_feed)
+        except ValueError as e:
+            console.print(f"[red]{e}[/red]")
+            return
         items = await feed_reader.fetch_feeds(feed_reader.custom_feeds)
         if items:
             console.print(f"[green]✅ Added feed: {name} ({len(items)} items)[/green]")
